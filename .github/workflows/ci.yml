@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+# Allow the release job to create tags/releases and upload assets.
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    name: Integration tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # PyRIC / mock-open ship un-buildable sdists; install our vendored
+          # universal wheels first, then the rest of the harness.
+          pip install --find-links ci/wheels \
+            pytest-homeassistant-custom-component freezegun
+      - name: Run tests
+        run: pytest -q
+
+  card:
+    name: Card build & smoke tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: card
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run lint
+      - name: Build card
+        run: npm run build
+      - name: Verify committed bundle is up to date
+        run: |
+          if ! git diff --quiet -- ../custom_components/daily_schedule/frontend/daily-schedule-card.js; then
+            echo "::error::Built card differs from the committed bundle. Run 'npm run build' and commit the result."
+            git --no-pager diff --stat -- ../custom_components/daily_schedule/frontend/daily-schedule-card.js
+            exit 1
+          fi
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Smoke tests
+        run: npx playwright test
+
+  release:
+    name: Release
+    needs: [python-tests, card]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: card/package-lock.json
+      - name: Build card bundle
+        working-directory: card
+        run: |
+          npm ci
+          npm run build
+      - name: Read version
+        id: ver
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('custom_components/daily_schedule/manifest.json'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Check whether this version is already released
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Package the complete built artifact
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p artifacts
+          cp custom_components/daily_schedule/frontend/daily-schedule-card.js artifacts/
+          (cd custom_components && zip -r ../artifacts/daily_schedule.zip daily_schedule)
+      - name: Create release and upload artifacts
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            artifacts/daily_schedule.zip \
+            artifacts/daily-schedule-card.js \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --generate-notes

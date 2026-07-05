@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / card build
+node_modules/
+*.tsbuildinfo
+
+# Card test artifacts (the built dist/ IS tracked for HACS installs)
+card/test-results/
+card/playwright-report/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

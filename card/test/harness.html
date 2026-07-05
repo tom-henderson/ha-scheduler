@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { background: #12161c; margin: 0; padding: 24px; }
+    </style>
+  </head>
+  <body>
+    <script>
+      // Minimal stubs for the HA custom elements the card renders. They just
+      // pass their children through so we can assert on real card structure.
+      const passthrough = ["ha-card", "ha-textfield", "ha-select", "mwc-list-item",
+        "ha-entities-picker"];
+      for (const tag of passthrough) {
+        customElements.define(tag, class extends HTMLElement {});
+      }
+      customElements.define("ha-icon", class extends HTMLElement {});
+      // ha-switch exposes a boolean `checked` property.
+      customElements.define("ha-switch", class extends HTMLElement {
+        get checked() { return this.hasAttribute("checked"); }
+        set checked(v) { v ? this.setAttribute("checked", "") : this.removeAttribute("checked"); }
+      });
+
+      const TYPES = {
+        light: { label: "Light", icon: "mdi:lightbulb", states: [
+          { key: "off", label: "Off", service: "light.turn_off" },
+          { key: "on", label: "On", service: "light.turn_on" }] },
+        water: { label: "Water", icon: "mdi:water", states: [
+          { key: "off", label: "Off", service: "switch.turn_off" },
+          { key: "on", label: "Watering", service: "switch.turn_on" }] },
+      };
+
+      const schedule = {
+        enabled: true,
+        conflicts: { bar1: ["Porch Accent"], bar3: ["Holiday Lights"] },
+        bars: [
+          { id: "bar1", name: "Holiday Lights", type: "light", enabled: true, base: 0,
+            targets: ["light.porch", "light.lamp"],
+            segments: [
+              { id: "a1", start: 0, end: 7, state: 1, jitter: 0.16 },
+              { id: "a2", start: 16.5, end: 23, state: 1, jitter: 0.25 }] },
+          { id: "bar2", name: "Garden Watering", type: "water", enabled: true, base: 0,
+            targets: ["switch.zone1"],
+            segments: [{ id: "b1", start: 6, end: 6.5, state: 1, jitter: 0 }] },
+          { id: "bar3", name: "Porch Accent", type: "light", enabled: false, base: 0,
+            targets: ["light.porch"],
+            segments: [{ id: "c1", start: 18, end: 22, state: 1, jitter: 0 }] },
+        ],
+      };
+
+      const hass = {
+        callWS: async (msg) => {
+          if (msg.type === "daily_schedule/list_entries")
+            return { entries: [{ entry_id: "e1", title: "Daily Schedule" }], types: TYPES };
+          if (msg.type === "daily_schedule/get") return { ...schedule, types: TYPES };
+          return {};
+        },
+        connection: {
+          subscribeMessage: async (cb) => { cb(schedule); return () => {}; },
+        },
+      };
+      window.__hass = hass;
+    </script>
+    <script type="module">
+      import "/custom_components/daily_schedule/frontend/daily-schedule-card.js";
+      const card = document.createElement("daily-schedule-card");
+      card.setConfig({ type: "custom:daily-schedule-card", entry_id: "e1" });
+      card.hass = window.__hass;
+      document.body.appendChild(card);
+      window.__card = card;
+    </script>
+  </body>
+</html>

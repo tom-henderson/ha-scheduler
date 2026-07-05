@@ -1,0 +1,15 @@
+sync_now:
+  name: Sync now
+  description: >-
+    Set every targeted entity to the state its schedule defines for the current
+    time. Runs the same state-sync performed at Home Assistant startup.
+  fields:
+    entry_id:
+      name: Schedule
+      description: >-
+        Config entry id of a specific Daily Schedule to sync. Omit to sync every
+        loaded schedule.
+      required: false
+      example: 1a2b3c4d5e6f
+      selector:
+        text:
