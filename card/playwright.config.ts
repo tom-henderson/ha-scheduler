@@ -11,7 +11,9 @@ export default defineConfig({
     },
   },
   webServer: {
-    command: `python3 -m http.server ${PORT}`,
+    // Serve the repo root so the harness can load the card from its
+    // integration path, matching how HA serves it.
+    command: `python3 -m http.server ${PORT} --directory ..`,
     port: PORT,
     reuseExistingServer: true,
   },

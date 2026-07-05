@@ -3,6 +3,7 @@
   "name": "Daily Schedule",
   "codeowners": ["@tom-henderson"],
   "config_flow": true,
+  "after_dependencies": ["frontend"],
   "dependencies": ["http", "websocket_api"],
   "documentation": "https://github.com/tom-henderson/ha-scheduler",
   "iot_class": "local_push",

@@ -63,7 +63,7 @@
       window.__hass = hass;
     </script>
     <script type="module">
-      import "../dist/daily-schedule-card.js";
+      import "/custom_components/daily_schedule/frontend/daily-schedule-card.js";
       const card = document.createElement("daily-schedule-card");
       card.setConfig({ type: "custom:daily-schedule-card", entry_id: "e1" });
       card.hass = window.__hass;

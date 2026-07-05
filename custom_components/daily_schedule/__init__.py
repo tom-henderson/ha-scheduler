@@ -10,6 +10,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.start import async_at_started
 
 from .const import ATTR_ENTRY_ID, DOMAIN, SERVICE_SYNC_NOW
+from .frontend import async_register_card
 from .manager import ScheduleManager
 from .websocket import async_register_websocket
 
@@ -39,6 +40,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         schema=vol.Schema({vol.Optional(ATTR_ENTRY_ID): cv.string}),
     )
     async_register_websocket(hass)
+    await async_register_card(hass)
     return True
 
 

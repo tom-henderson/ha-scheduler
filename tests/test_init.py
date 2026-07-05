@@ -39,6 +39,15 @@ async def test_switch_toggles_schedule_enabled(hass, config_entry):
     assert manager.schedule.enabled is True
 
 
+async def test_card_bundle_is_registered(hass, config_entry):
+    from custom_components.daily_schedule.frontend import CARD_PATH, _REGISTERED
+
+    assert CARD_PATH.is_file(), "built card bundle must ship inside the integration"
+    await _setup_empty(hass, config_entry)
+    # The static path for the card is registered during async_setup.
+    assert hass.data.get(_REGISTERED) is True
+
+
 async def test_unload_removes_entry(hass, config_entry):
     await _setup_empty(hass, config_entry)
     assert await hass.config_entries.async_unload(config_entry.entry_id)

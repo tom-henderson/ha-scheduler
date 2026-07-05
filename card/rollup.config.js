@@ -5,7 +5,10 @@ import terser from "@rollup/plugin-terser";
 export default {
   input: "src/daily-schedule-card.ts",
   output: {
-    file: "dist/daily-schedule-card.js",
+    // Emit straight into the integration so a single HACS "integration"
+    // install ships the card, which the component auto-registers as a
+    // frontend resource.
+    file: "../custom_components/daily_schedule/frontend/daily-schedule-card.js",
     format: "es",
     sourcemap: false,
   },

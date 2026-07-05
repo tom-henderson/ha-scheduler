@@ -11,7 +11,7 @@ test("card mounts and renders bars without runtime errors", async ({ page }) => 
     }
   });
 
-  await page.goto("/test/harness.html");
+  await page.goto("/card/test/harness.html");
 
   // The card and one bar per schedule entry should upgrade and render.
   await expect(page.locator("daily-schedule-card")).toBeVisible();
@@ -31,14 +31,14 @@ test("card mounts and renders bars without runtime errors", async ({ page }) => 
 });
 
 test("add-bar menu opens and lists device types", async ({ page }) => {
-  await page.goto("/test/harness.html");
+  await page.goto("/card/test/harness.html");
   await page.locator(".add").click();
   await expect(page.locator(".menu button")).toHaveCount(2); // light, water
   await expect(page.locator(".menu")).toContainText("light");
 });
 
 test("clicking a segment opens the segment editor", async ({ page }) => {
-  await page.goto("/test/harness.html");
+  await page.goto("/card/test/harness.html");
   await page.locator("ds-bar").first().locator(".seg").first().click();
   await expect(page.locator("ds-segment-editor")).toHaveCount(1);
   await expect(page.locator("ds-segment-editor")).toContainText("Edit segment");
