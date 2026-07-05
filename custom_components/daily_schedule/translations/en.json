@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Daily Schedule",
+        "description": "Create the Daily Schedule. Build your repeating 24-hour timelines from the Daily Schedule card once it is added to a dashboard."
+      }
+    },
+    "abort": {
+      "already_configured": "Daily Schedule is already set up."
+    }
+  },
+  "services": {
+    "sync_now": {
+      "name": "Sync now",
+      "description": "Set every targeted entity to the state its schedule defines for the current time.",
+      "fields": {
+        "entry_id": {
+          "name": "Schedule",
+          "description": "Config entry id of a specific Daily Schedule to sync. Omit to sync every loaded schedule."
+        }
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "enabled": {
+        "name": "Enabled"
+      }
+    }
+  }
+}
