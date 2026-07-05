@@ -38,6 +38,7 @@ export class DailyScheduleCard extends LitElement {
   private _unsub?: Promise<() => void>;
   private _nowTimer?: number;
   private _connectedEntry?: string;
+  private _connecting = false;
 
   static getConfigElement() {
     return document.createElement("ds-editor");
@@ -73,8 +74,16 @@ export class DailyScheduleCard extends LitElement {
   }
 
   private async _maybeConnect(): Promise<void> {
-    if (!this.hass || this._connectedEntry) return;
+    if (!this.hass || this._connectedEntry || this._connecting) return;
+    this._connecting = true;
+    try {
+      await this._connect();
+    } finally {
+      this._connecting = false;
+    }
+  }
 
+  private async _connect(): Promise<void> {
     if (!this._entryId) {
       // Auto-select the only entry if none configured.
       try {
