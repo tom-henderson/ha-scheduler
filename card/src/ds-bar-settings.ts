@@ -9,6 +9,11 @@ import type { Bar, HomeAssistant } from "./types";
  * Popover to edit a bar's name and target entities using the standard HA
  * entities picker (§8). Emits `bar-settings-save` (detail: {name, targets})
  * and `popover-close`.
+ *
+ * Uses `<ha-selector>` (HA's modern selector API) rather than
+ * `<ha-entities-picker>`. The picker component is lazily loaded by HA and is
+ * not registered on plain dashboard views, so it silently renders blank; the
+ * selector element is always available.
  */
 @customElement("ds-bar-settings")
 export class DsBarSettings extends LitElement {
@@ -42,6 +47,7 @@ export class DsBarSettings extends LitElement {
 
   override render() {
     const domains = TYPE_DOMAINS[this.bar.type] ?? [];
+    const selector = { entity: { multiple: true, filter: { domain: domains } } };
     return html`
       <div class="popover" @click=${(e: Event) => e.stopPropagation()}>
         <div class="popover-head">
@@ -61,13 +67,13 @@ export class DsBarSettings extends LitElement {
 
         <div class="block">
           <div class="field-label">Target entities</div>
-          <ha-entities-picker
+          <ha-selector
             .hass=${this.hass}
+            .selector=${selector}
             .value=${this._targets}
-            .includeDomains=${domains}
             @value-changed=${(e: CustomEvent<{ value: string[] }>) =>
               (this._targets = e.detail.value)}
-          ></ha-entities-picker>
+          ></ha-selector>
         </div>
 
         <div style="display:flex;gap:8px">
