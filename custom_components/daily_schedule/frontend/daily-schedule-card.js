@@ -115,7 +115,7 @@ function t(t,e,i,s){var n,r=arguments.length,o=r<3?e:null===s?s=Object.getOwnPro
     font-variant-numeric: tabular-nums;
     font-family: inherit;
   }
-`;let Ct=class extends at{constructor(){super(...arguments),this._name="",this._targets=[],this._save=()=>{this.dispatchEvent(new CustomEvent("bar-settings-save",{detail:{name:this._name.trim()||this.bar.name,targets:this._targets}}))}}willUpdate(t){t.has("bar")&&(this._name=this.bar.name,this._targets=[...this.bar.targets])}render(){const t=ft[this.bar.type]??[];return W`
+`;let Ct=class extends at{constructor(){super(...arguments),this._name="",this._targets=[],this._save=()=>{this.dispatchEvent(new CustomEvent("bar-settings-save",{detail:{name:this._name.trim()||this.bar.name,targets:this._targets}}))}}willUpdate(t){t.has("bar")&&(this._name=this.bar.name,this._targets=[...this.bar.targets])}render(){const t={entity:{multiple:!0,filter:{domain:ft[this.bar.type]??[]}}};return W`
       <div class="popover" @click=${t=>t.stopPropagation()}>
         <div class="popover-head">
           <span>Bar settings</span>
@@ -134,12 +134,12 @@ function t(t,e,i,s){var n,r=arguments.length,o=r<3?e:null===s?s=Object.getOwnPro
 
         <div class="block">
           <div class="field-label">Target entities</div>
-          <ha-entities-picker
+          <ha-selector
             .hass=${this.hass}
+            .selector=${t}
             .value=${this._targets}
-            .includeDomains=${t}
             @value-changed=${t=>this._targets=t.detail.value}
-          ></ha-entities-picker>
+          ></ha-selector>
         </div>
 
         <div style="display:flex;gap:8px">

@@ -11,7 +11,7 @@
       // Minimal stubs for the HA custom elements the card renders. They just
       // pass their children through so we can assert on real card structure.
       const passthrough = ["ha-card", "ha-textfield", "ha-select", "mwc-list-item",
-        "ha-entities-picker"];
+        "ha-selector"];
       for (const tag of passthrough) {
         customElements.define(tag, class extends HTMLElement {});
       }
