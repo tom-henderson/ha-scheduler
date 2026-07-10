@@ -10,6 +10,7 @@ from custom_components.daily_schedule.const import (
     is_stateless,
     service_for,
     state_count,
+    step_should_fire,
     steps_for,
 )
 
@@ -50,47 +51,65 @@ def test_switch_uses_domain_agnostic_turn_on_off():
     assert is_active("switch", 1)
 
 
-def test_climate_states_are_modes():
+def test_climate_is_off_on_with_dynamic_mode_params():
     climate = TYPE_REGISTRY["climate"]
-    assert [s["key"] for s in climate["states"]] == ["off", "heat", "cool", "auto"]
-    # Off is index 0 / rest; the three modes are active.
+    assert [s["key"] for s in climate["states"]] == ["off", "on"]
     assert not is_active("climate", 0)
-    for i in (1, 2, 3):
-        assert is_active("climate", i)
+    assert is_active("climate", 1)
+    # Mode and fan options come from the target entity, not a fixed list.
+    schema = {p["key"]: p for p in climate["param_schema"]}
+    assert schema["hvac_mode"]["options_attribute"] == "hvac_modes"
+    assert schema["fan_mode"]["options_attribute"] == "fan_modes"
+    assert schema["fan_mode"]["optional"] is True
+    assert schema["temperature"]["kind"] == "number"
 
 
-def test_climate_declares_a_temperature_param():
-    schema = TYPE_REGISTRY["climate"]["param_schema"]
-    temp = next(p for p in schema if p["key"] == "temperature")
-    assert temp["kind"] == "number"
-    assert temp["min"] < temp["max"]
-
-
-def test_service_for_climate_carries_mode_and_default_temp():
-    # Each mode maps to set_temperature with its hvac_mode + a default temp; the
-    # engine later merges the segment's own temperature over this default.
-    domain, service, data = service_for("climate", 1)  # heat
-    assert (domain, service) == ("climate", "set_temperature")
-    assert data["hvac_mode"] == "heat"
-    assert "temperature" in data
-    # Off turns the unit off and takes no data.
+def test_climate_on_is_mode_temp_fan_sequence_with_requires():
+    steps = steps_for("climate", 1)  # on
+    assert [(s.domain, s.service) for s in steps] == [
+        ("climate", "set_hvac_mode"),
+        ("climate", "set_temperature"),
+        ("climate", "set_fan_mode"),
+    ]
+    # The mode and fan steps only fire when their param is set.
+    by_service = {s.service: s for s in steps}
+    assert by_service["set_hvac_mode"].require == ("hvac_mode",)
+    assert by_service["set_fan_mode"].require == ("fan_mode",)
+    assert by_service["set_temperature"].require == ()
+    # Off is a single call with no data.
     assert service_for("climate", 0) == ("climate", "turn_off", {})
 
 
+def test_step_should_fire_skips_empty_required_params():
+    fan_step = next(s for s in steps_for("climate", 1) if s.service == "set_fan_mode")
+    assert not step_should_fire(fan_step, {"fan_mode": ""})
+    assert not step_should_fire(fan_step, {})
+    assert step_should_fire(fan_step, {"fan_mode": "high"})
+    # A step with no requirements always fires.
+    temp_step = next(s for s in steps_for("climate", 1) if s.service == "set_temperature")
+    assert step_should_fire(temp_step, {"temperature": 20})
+
+
 def test_single_service_state_is_one_step():
-    assert steps_for("switch", 1) == [("homeassistant", "turn_on", {})]
-    assert steps_for("climate", 1)[0][:2] == ("climate", "set_temperature")
-    assert len(steps_for("climate", 1)) == 1
+    steps = steps_for("switch", 1)
+    assert len(steps) == 1
+    assert (steps[0].domain, steps[0].service, steps[0].data) == (
+        "homeassistant",
+        "turn_on",
+        {},
+    )
 
 
 def test_media_play_is_a_sequence_of_volume_then_play():
     steps = steps_for("media", 1)  # play
-    assert [(d, s) for d, s, _ in steps] == [
+    assert [(s.domain, s.service) for s in steps] == [
         ("media_player", "volume_set"),
         ("media_player", "play_media"),
     ]
     # Stopped is a single call.
-    assert steps_for("media", 0) == [("media_player", "media_stop", {})]
+    stopped = steps_for("media", 0)
+    assert len(stopped) == 1
+    assert (stopped[0].domain, stopped[0].service) == ("media_player", "media_stop")
 
 
 def test_apply_params_only_fills_keys_the_step_declares():

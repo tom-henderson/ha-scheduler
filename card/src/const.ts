@@ -40,6 +40,16 @@ export const TYPE_DOMAINS: Record<string, string[]> = {
   media: ["media_player"],
 };
 
+/** Per-HVAC-mode segment colours for climate bars (keyed by the mode value). */
+export const HVAC_MODE_COLORS: Record<string, string> = {
+  heat: "#ff6b5a",
+  cool: "#4aa8ff",
+  heat_cool: "#5ad19a",
+  auto: "#5ad19a",
+  dry: "#f5b301",
+  fan_only: "#7e9cff",
+};
+
 export const DEFAULT_TYPE_COLOR = "var(--primary-color)";
 
 export function typeColor(type: string): string {

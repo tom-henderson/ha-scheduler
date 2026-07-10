@@ -17,7 +17,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import apply_params, is_stateless, steps_for
+from .const import apply_params, is_stateless, step_should_fire, steps_for
 from .logic import (
     ChangePoint,
     cell_at,
@@ -181,21 +181,24 @@ class ScheduleEngine:
             return
         # A state may be a single call or an ordered sequence (e.g. media: set
         # volume, then play). Each step merges the segment's own parameters over
-        # its registry defaults.
-        for domain, service, defaults in steps_for(bar.type, state):
-            data = apply_params(defaults, seg_data or {})
+        # its registry defaults; a step whose required parameter is empty (e.g.
+        # climate's fan mode when none was chosen) is skipped.
+        for step in steps_for(bar.type, state):
+            data = apply_params(step.data, seg_data or {})
+            if not step_should_fire(step, data):
+                continue
             try:
                 await self.hass.services.async_call(
-                    domain,
-                    service,
+                    step.domain,
+                    step.service,
                     {"entity_id": list(bar.targets), **data},
                     blocking=False,
                 )
             except Exception:  # noqa: BLE001 - never let one bar break the schedule
                 _LOGGER.exception(
                     "Daily Schedule: failed to apply %s.%s to %s",
-                    domain,
-                    service,
+                    step.domain,
+                    step.service,
                     bar.targets,
                 )
 

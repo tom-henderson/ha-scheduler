@@ -1,8 +1,16 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import { JITTERS } from "./const";
-import { fmt, isActive, paramKeys, paramSchema, paramValue, parse } from "./logic";
+import {
+  fmt,
+  isActive,
+  paramKeys,
+  paramOptions,
+  paramSchema,
+  paramValue,
+  parse,
+} from "./logic";
 import { sharedStyles } from "./styles";
 import type { HomeAssistant, Segment, TypeParam, TypeRegistry } from "./types";
 
@@ -122,6 +130,8 @@ export class DsSegmentEditor extends LitElement {
   @property({ attribute: false }) types!: TypeRegistry;
   @property({ attribute: false }) bounds!: { min: number; max: number };
   @property({ attribute: false }) accent = "";
+  /** Target entity ids of the bar — used to read dynamic select options. */
+  @property({ attribute: false }) entities: string[] = [];
 
   @state() private _si = 0;
   @state() private _start = "";
@@ -138,6 +148,19 @@ export class DsSegmentEditor extends LitElement {
       this._jit = this.segment.jitter ?? 0;
       this._data = { ...(this.segment.data ?? {}) };
       this._err = "";
+    }
+    this._seedRequiredSelects();
+  }
+
+  /** Default a required select (e.g. climate mode) to the first option the
+   * target entity offers, so a new active segment carries a valid value. */
+  private _seedRequiredSelects(): void {
+    for (const p of this._params) {
+      if (p.kind !== "select" || p.optional) continue;
+      const cur = this._data[p.key];
+      if (cur !== undefined && cur !== "") continue;
+      const opts = paramOptions(this.hass, this.entities, p);
+      if (opts.length) this._data = { ...this._data, [p.key]: opts[0].value };
     }
   }
 
@@ -281,11 +304,23 @@ export class DsSegmentEditor extends LitElement {
   }
 
   private _renderSelect(p: TypeParam) {
+    const opts = paramOptions(this.hass, this.entities, p);
+    if (!opts.length) {
+      // Optional params (e.g. fan mode on a unit without one) just disappear;
+      // required ones prompt for a target so we can read its options.
+      if (p.optional) return nothing;
+      return html`
+        <div class="field-label" style="margin-top:12px">${p.label}</div>
+        <div class="hint" style="color:var(--ds-dim)">
+          Pick a target entity to choose ${p.label.toLowerCase()} options.
+        </div>
+      `;
+    }
     const cur = String(paramValue(this.types, this.type, this._si, { data: this._data }, p) ?? "");
     return html`
       <div class="field-label" style="margin-top:12px">${p.label}</div>
       <div class="state-buttons" style=${`--accent:${this.accent}`}>
-        ${(p.options ?? []).map(
+        ${opts.map(
           (o) => html`
             <button
               class=${o.value === cur ? "sel" : ""}

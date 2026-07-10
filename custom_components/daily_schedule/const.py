@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 DOMAIN: Final = "daily_schedule"
 
@@ -116,7 +116,22 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
     "climate": {
         "label": "Climate",
         "icon": "mdi:thermostat",
+        # Off/On, with the HVAC mode, temperature and fan mode as per-segment
+        # parameters. The mode and fan options are read from the *target entity's*
+        # own `hvac_modes` / `fan_modes` attributes (`options_attribute`) rather
+        # than assumed — different units expose different sets. "On" runs a
+        # sequence: set the mode, the temperature, and (if the entity supports it
+        # and the user picked one) the fan mode. Steps whose required parameter is
+        # empty are skipped (see step_should_fire), so set_fan_mode is only called
+        # when a fan mode is chosen.
         "param_schema": [
+            {
+                "key": "hvac_mode",
+                "label": "Mode",
+                "kind": "select",
+                "options_attribute": "hvac_modes",
+                "exclude": ["off"],  # "off" is the bar's Off state, not a mode
+            },
             {
                 "key": "temperature",
                 "label": "Target temperature",
@@ -127,29 +142,35 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
                 "unit": "°",
                 "default": 20,
             },
+            {
+                "key": "fan_mode",
+                "label": "Fan mode",
+                "kind": "select",
+                "options_attribute": "fan_modes",
+                "optional": True,  # skipped when the entity has no fan modes
+            },
         ],
         "states": [
             {"key": "off", "label": "Off", "service": "climate.turn_off"},
             {
-                "key": "heat",
-                "label": "Heat",
-                "service": "climate.set_temperature",
-                "color": "#ff6b5a",
-                "data": {"hvac_mode": "heat", "temperature": 20},
-            },
-            {
-                "key": "cool",
-                "label": "Cool",
-                "service": "climate.set_temperature",
-                "color": "#4aa8ff",
-                "data": {"hvac_mode": "cool", "temperature": 24},
-            },
-            {
-                "key": "auto",
-                "label": "Auto",
-                "service": "climate.set_temperature",
-                "color": "#5ad19a",
-                "data": {"hvac_mode": "heat_cool", "temperature": 21},
+                "key": "on",
+                "label": "On",
+                "sequence": [
+                    {
+                        "service": "climate.set_hvac_mode",
+                        "data": {"hvac_mode": ""},
+                        "require": ["hvac_mode"],
+                    },
+                    {
+                        "service": "climate.set_temperature",
+                        "data": {"temperature": 20},
+                    },
+                    {
+                        "service": "climate.set_fan_mode",
+                        "data": {"fan_mode": ""},
+                        "require": ["fan_mode"],
+                    },
+                ],
             },
         ],
     },
@@ -254,20 +275,35 @@ def is_stateless(bar_type: str) -> bool:
     return type_def(bar_type).get("kind") == "stateless"
 
 
-def steps_for(bar_type: str, state_index: int) -> list[tuple[str, str, dict[str, Any]]]:
+class Step(NamedTuple):
+    """One resolved service call for a state.
+
+    `require` names parameter keys that must be present (non-empty) for the step
+    to fire — e.g. climate's `set_fan_mode` step is skipped unless a fan mode is
+    chosen (see `step_should_fire`).
+    """
+
+    domain: str
+    service: str
+    data: dict[str, Any]
+    require: tuple[str, ...] = ()
+
+
+def steps_for(bar_type: str, state_index: int) -> list[Step]:
     """Resolve the ordered service call(s) for a (type, state index).
 
     Most states are a single call; a state may instead declare a `sequence`
-    (e.g. media: set volume, then play). Each step is (domain, service, defaults)
-    where `defaults` are the registry-provided service data, before per-segment
-    parameters are applied (see `apply_params`).
+    (e.g. media: set volume, then play). `data` is the registry-provided service
+    data, before per-segment parameters are applied (see `apply_params`).
     """
     state = type_def(bar_type)["states"][clamp_state_index(bar_type, state_index)]
     raw_steps = state["sequence"] if "sequence" in state else [state]
-    steps: list[tuple[str, str, dict[str, Any]]] = []
+    steps: list[Step] = []
     for step in raw_steps:
         domain, service = step["service"].split(".", 1)
-        steps.append((domain, service, dict(step.get("data", {}))))
+        steps.append(
+            Step(domain, service, dict(step.get("data", {})), tuple(step.get("require", ())))
+        )
     return steps
 
 
@@ -276,7 +312,8 @@ def service_for(bar_type: str, state_index: int) -> tuple[str, str, dict[str, An
 
     Convenience over `steps_for` for the simple types; returns the first step.
     """
-    return steps_for(bar_type, state_index)[0]
+    step = steps_for(bar_type, state_index)[0]
+    return step.domain, step.service, step.data
 
 
 def apply_params(
@@ -288,3 +325,12 @@ def apply_params(
     so a segment's `volume_level` never leaks into `play_media` and vice-versa.
     """
     return {key: seg_data.get(key, value) for key, value in defaults.items()}
+
+
+def step_should_fire(step: Step, data: dict[str, Any]) -> bool:
+    """Whether a step runs: all its required params must be present and non-empty.
+
+    Lets an optional call (e.g. `set_fan_mode`) be omitted when the user hasn't
+    chosen a value or the entity doesn't support it.
+    """
+    return all(data.get(key) not in (None, "") for key in step.require)

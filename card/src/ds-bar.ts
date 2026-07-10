@@ -12,9 +12,9 @@ import {
   largestGap,
   nextTriggerTime,
   paramSummary,
+  segmentColor,
   sortedSegments,
   sortedTriggers,
-  stateColor,
   stateLabel,
 } from "./logic";
 import "./ds-bar-settings";
@@ -285,6 +285,7 @@ export class DsBar extends LitElement {
               .segment=${editingSeg}
               .type=${this.bar.type}
               .types=${this.types}
+              .entities=${this.bar.targets}
               .bounds=${boundsFor(this.bar, editingSeg)}
               .accent=${accent}
               @segment-save=${this._saveSegment}
@@ -405,15 +406,17 @@ export class DsBar extends LitElement {
     const active = isActive(this.types, this.bar.type, s.state);
     const left = (s.start / HOURS) * 100;
     const width = ((s.end - s.start) / HOURS) * 100;
-    const label = stateLabel(this.types, this.bar.type, s.state);
     const summary = active ? paramSummary(this.types, this.bar.type, s) : "";
-    const color = active ? stateColor(this.types, this.bar.type, s.state) : "";
+    // Prefer the parameter summary as the label (e.g. "Heat · 21°"); fall back
+    // to the plain state label for simple types ("On", "Low").
+    const label = summary || stateLabel(this.types, this.bar.type, s.state);
+    const color = active ? segmentColor(this.types, this.bar.type, s) : "";
     const dragging = this._drag?.id === s.id;
     const showStart = dragging && (this._drag!.mode === "move" || this._drag!.mode === "l");
     const showEnd = dragging && (this._drag!.mode === "move" || this._drag!.mode === "r");
     const title = `${fmt(s.start)}–${fmt(s.end)} · ${label}${
-      summary ? ` ${summary}` : ""
-    }${s.jitter ? ` · ${jitterLabel(s.jitter)}` : ""}`;
+      s.jitter ? ` · ${jitterLabel(s.jitter)}` : ""
+    }`;
     return html`
       <div
         class=${`seg ${active ? "active" : "inactive"} ${dragging ? "dragging" : ""}`}
@@ -430,9 +433,7 @@ export class DsBar extends LitElement {
         </div>
         ${width > 8
           ? html`<span class="seg-label"
-              >${label}${summary
-                ? html`<span class="seg-sub">${summary}</span>`
-                : nothing}${s.jitter
+              >${label}${s.jitter
                 ? html`<ha-icon icon="mdi:dice-5" style="--mdc-icon-size:12px"></ha-icon>`
                 : nothing}</span
             >`

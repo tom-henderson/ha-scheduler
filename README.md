@@ -35,19 +35,26 @@ visual, drag-driven card. No YAML required for the common case.
 | `water`   | Off / Watering               | `switch.turn_off` / `switch.turn_on`             |
 | `fan`     | Off / Low / Med / High       | `fan.turn_off` / `fan.set_percentage`            |
 | `switch`  | Off / On                     | `homeassistant.turn_off` / `homeassistant.turn_on` |
-| `climate` | Off / Heat / Cool / Auto     | `climate.turn_off` / `climate.set_temperature`   |
+| `climate` | Off / On (+ mode, temp, fan) | `climate.turn_off` / `set_hvac_mode` + `set_temperature` + `set_fan_mode` |
 | `media`   | Stopped / Play               | `media_player.media_stop` / `volume_set` + `play_media` |
 
 `climate` and `media` carry **per-segment parameters** — a climate segment's
-target temperature, or a media segment's source and volume — edited in the
-segment popover and stored on the segment. A type declares these via
-`param_schema` in the registry; the engine merges a segment's saved values over
-the state's defaults when it fires the service call.
+mode, target temperature and fan mode, or a media segment's source and volume —
+edited in the segment popover and stored on the segment. A type declares these
+via `param_schema` in the registry; the engine merges a segment's saved values
+over the step's defaults when it fires the service call.
 
-`media` also shows that a state can run a **sequence** of service calls (set the
-volume, then play), and that `targets` may list several players — a speaker
-group needs no special handling. Each step only receives the parameters it
-declares, so a segment's volume never leaks into `play_media`.
+For `climate`, the **HVAC mode and fan mode lists are read from the target
+entity's own `hvac_modes` / `fan_modes` attributes** — nothing is assumed. When
+a bar targets several climate entities, only the modes they *all* support are
+offered. Segments are coloured by mode.
+
+`media` (and `climate`) show that a state can run a **sequence** of service
+calls — for media, set the volume then play; for climate, set the mode,
+temperature, then fan. A step whose required parameter is empty is skipped (e.g.
+`set_fan_mode` when the unit has no fan modes). `targets` may list several
+entities — a speaker group or a pair of heat pumps — with no special handling,
+and each step only receives the parameters it declares.
 
 ### Stateless triggers
 
