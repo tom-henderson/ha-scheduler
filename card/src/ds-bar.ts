@@ -7,16 +7,20 @@ import {
   coveringSegment,
   fmt,
   isActive,
+  isStateless,
   jitterLabel,
   largestGap,
+  nextTriggerTime,
   paramSummary,
   sortedSegments,
+  sortedTriggers,
   stateColor,
   stateLabel,
 } from "./logic";
 import "./ds-bar-settings";
+import "./ds-trigger-editor";
 import { sharedStyles } from "./styles";
-import type { Bar, HomeAssistant, Segment, TypeRegistry } from "./types";
+import type { Bar, HomeAssistant, Segment, Trigger, TypeRegistry } from "./types";
 
 type DragMode = "move" | "l" | "r";
 
@@ -89,6 +93,75 @@ export class DsBar extends LitElement {
     this._editing = null;
   };
 
+  // -- trigger actions (stateless bars) ---------------------------------
+
+  private get _triggers(): Trigger[] {
+    return this.bar.triggers ?? [];
+  }
+
+  private _addTrigger = (): void => {
+    const first = this.types[this.bar.type]?.actions?.[0];
+    const trg: Trigger = {
+      id: `trg_${Math.random().toString(36).slice(2, 10)}`,
+      at: nextTriggerTime(this.bar),
+      jitter: 0,
+      action: { service: first?.service, entity_id: "" },
+    };
+    this._emit({ ...this.bar, triggers: [...this._triggers, trg] }, true);
+    this._editing = trg.id;
+  };
+
+  private _saveTrigger = (e: CustomEvent<Trigger>): void => {
+    const nt = e.detail;
+    this._emit(
+      { ...this.bar, triggers: this._triggers.map((t) => (t.id === nt.id ? nt : t)) },
+      true
+    );
+    this._editing = null;
+  };
+
+  private _deleteTrigger = (e: CustomEvent<string>): void => {
+    this._emit(
+      { ...this.bar, triggers: this._triggers.filter((t) => t.id !== e.detail) },
+      true
+    );
+    this._editing = null;
+  };
+
+  private _dragTrigger(trg: Trigger, e: PointerEvent): void {
+    e.stopPropagation();
+    this._moved = false;
+    const startX = e.clientX;
+    const origAt = trg.at;
+    this._drag = { id: trg.id, mode: "move" };
+    const track = this.renderRoot.querySelector(".track") as HTMLElement;
+
+    const move = (ev: PointerEvent): void => {
+      const w = track.getBoundingClientRect().width;
+      const dh = Math.round((((ev.clientX - startX) / w) * HOURS) / SNAP) * SNAP;
+      if (Math.abs(ev.clientX - startX) > 3) this._moved = true;
+      const at = Math.max(0, Math.min(HOURS - SNAP, origAt + dh));
+      this._emit(
+        { ...this.bar, triggers: this._triggers.map((t) => (t.id === trg.id ? { ...t, at } : t)) },
+        false
+      );
+    };
+    const up = (): void => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      this._drag = null;
+      if (this._moved) this._emit(this.bar, true);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  private _triggerLabel(trg: Trigger): string {
+    const id = trg.action?.entity_id;
+    if (!id) return "Pick action";
+    return this.hass?.states?.[id]?.attributes?.friendly_name ?? id.split(".").pop() ?? id;
+  }
+
   // -- dragging ---------------------------------------------------------
 
   private _dragSeg(seg: Segment, mode: DragMode, e: PointerEvent): void {
@@ -134,10 +207,10 @@ export class DsBar extends LitElement {
   override render() {
     const accent = typeColor(this.bar.type);
     const t = this.types[this.bar.type];
+    const stateless = isStateless(this.types, this.bar.type);
     const segs = sortedSegments(this.bar);
-    const baseActive = isActive(this.types, this.bar.type, this.bar.base);
     const editingSeg = segs.find((s) => s.id === this._editing);
-    const curSeg = coveringSegment(this.bar, this.now);
+    const editingTrg = this._triggers.find((tr) => tr.id === this._editing);
 
     return html`
       <div class="bar" style=${`opacity:${this._live ? 1 : 0.4};--accent:${accent}`}>
@@ -156,7 +229,11 @@ export class DsBar extends LitElement {
                   </span>`
                 : nothing}
             </div>
-            <div class="targets">${this.bar.targets.join(" · ") || "No targets"}</div>
+            <div class="targets">
+              ${stateless
+                ? `${this._triggers.length} ${this._triggers.length === 1 ? "trigger" : "triggers"}`
+                : this.bar.targets.join(" · ") || "No targets"}
+            </div>
           </div>
           <div class="controls">
             <button
@@ -166,7 +243,11 @@ export class DsBar extends LitElement {
             >
               <ha-icon icon="mdi:cog-outline" style="--mdc-icon-size:17px"></ha-icon>
             </button>
-            <button class="iconbtn" title="Add segment" @click=${this._addSegment}>
+            <button
+              class="iconbtn"
+              title=${stateless ? "Add trigger" : "Add segment"}
+              @click=${stateless ? this._addTrigger : this._addSegment}
+            >
               <ha-icon icon="mdi:plus"></ha-icon>
             </button>
             <button
@@ -196,34 +277,7 @@ export class DsBar extends LitElement {
           </div>
         </div>
 
-        <div class="track" @click=${() => (this._editing = "__base__")}>
-          <div
-            class=${`base ${baseActive ? "active" : ""}`}
-            title=${`Default: ${stateLabel(this.types, this.bar.type, this.bar.base)} — click to change`}
-          >
-            ${baseActive
-              ? html`<span class="base-label"
-                  >default: ${stateLabel(this.types, this.bar.type, this.bar.base)}</span
-                >`
-              : nothing}
-          </div>
-
-          ${segs.map((s) => this._renderSegment(s))}
-
-          <div class="now" style=${`left:${(this.now / HOURS) * 100}%`}></div>
-
-          ${this.syncing && this._live && curSeg
-            ? html`<div
-                class="flash"
-                style=${`left:${(curSeg.start / HOURS) * 100}%;width:${
-                  ((curSeg.end - curSeg.start) / HOURS) * 100
-                }%`}
-              ></div>`
-            : nothing}
-          ${this.syncing && this._live && !curSeg
-            ? html`<div class="flash base-flash"></div>`
-            : nothing}
-        </div>
+        ${stateless ? this._renderTriggerTrack() : this._renderSegmentTrack(segs)}
 
         ${editingSeg
           ? html`<ds-segment-editor
@@ -255,6 +309,94 @@ export class DsBar extends LitElement {
               @popover-close=${() => (this._editing = null)}
             ></ds-bar-settings>`
           : nothing}
+        ${editingTrg
+          ? html`<ds-trigger-editor
+              .hass=${this.hass}
+              .trigger=${editingTrg}
+              .actions=${this.types[this.bar.type]?.actions ?? []}
+              .accent=${accent}
+              @trigger-save=${this._saveTrigger}
+              @trigger-delete=${this._deleteTrigger}
+              @popover-close=${() => (this._editing = null)}
+            ></ds-trigger-editor>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  private _renderSegmentTrack(segs: Segment[]) {
+    const accent = typeColor(this.bar.type);
+    const baseActive = isActive(this.types, this.bar.type, this.bar.base);
+    const curSeg = coveringSegment(this.bar, this.now);
+    return html`
+      <div class="track" @click=${() => (this._editing = "__base__")} style=${`--accent:${accent}`}>
+        <div
+          class=${`base ${baseActive ? "active" : ""}`}
+          title=${`Default: ${stateLabel(this.types, this.bar.type, this.bar.base)} — click to change`}
+        >
+          ${baseActive
+            ? html`<span class="base-label"
+                >default: ${stateLabel(this.types, this.bar.type, this.bar.base)}</span
+              >`
+            : nothing}
+        </div>
+
+        ${segs.map((s) => this._renderSegment(s))}
+
+        <div class="now" style=${`left:${(this.now / HOURS) * 100}%`}></div>
+
+        ${this.syncing && this._live && curSeg
+          ? html`<div
+              class="flash"
+              style=${`left:${(curSeg.start / HOURS) * 100}%;width:${
+                ((curSeg.end - curSeg.start) / HOURS) * 100
+              }%`}
+            ></div>`
+          : nothing}
+        ${this.syncing && this._live && !curSeg
+          ? html`<div class="flash base-flash"></div>`
+          : nothing}
+      </div>
+    `;
+  }
+
+  private _renderTriggerTrack() {
+    const accent = typeColor(this.bar.type);
+    return html`
+      <div class="track trig" style=${`--accent:${accent}`}>
+        ${[6, 12, 18].map(
+          (h) => html`<div class="gl" style=${`left:${(h / HOURS) * 100}%`}></div>`
+        )}
+        ${sortedTriggers(this.bar).map((tr) => this._renderPin(tr))}
+        <div class="now" style=${`left:${(this.now / HOURS) * 100}%`}></div>
+      </div>
+    `;
+  }
+
+  private _renderPin(tr: Trigger) {
+    const left = (tr.at / HOURS) * 100;
+    const dragging = this._drag?.id === tr.id;
+    const label = this._triggerLabel(tr);
+    const title = `${fmt(tr.at)} · ${label}${tr.jitter ? ` · ${jitterLabel(tr.jitter)}` : ""}`;
+    return html`
+      <div
+        class=${`pin ${dragging ? "dragging" : ""}`}
+        style=${`left:${left}%`}
+        title=${title}
+        @pointerdown=${(e: PointerEvent) => this._dragTrigger(tr, e)}
+        @click=${(e: Event) => {
+          e.stopPropagation();
+          if (!this._moved) this._editing = tr.id;
+        }}
+      >
+        <div class="flag">
+          ${tr.jitter
+            ? html`<ha-icon icon="mdi:dice-5" style="--mdc-icon-size:11px"></ha-icon>`
+            : nothing}
+          <span>${label}</span>
+        </div>
+        <div class="stem"></div>
+        <div class="knob"></div>
       </div>
     `;
   }
@@ -506,6 +648,70 @@ function barStyles() {
       background: var(--ds-now);
       z-index: 6;
       pointer-events: none;
+    }
+    .track.trig {
+      height: 58px;
+    }
+    .gl {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--ds-line);
+      opacity: 0.5;
+    }
+    .pin {
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      width: 0;
+      z-index: 4;
+      cursor: grab;
+    }
+    .pin.dragging {
+      z-index: 9;
+      cursor: grabbing;
+    }
+    .pin .stem {
+      position: absolute;
+      left: -1px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: color-mix(in srgb, var(--accent) 85%, #000);
+      pointer-events: none;
+    }
+    .pin .knob {
+      position: absolute;
+      bottom: -3px;
+      left: -1px;
+      transform: translateX(-50%);
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--ds-track-bg);
+      pointer-events: none;
+    }
+    .pin .flag {
+      position: absolute;
+      top: -4px;
+      left: -1px;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: #1a2400;
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    }
+    .pin.dragging .flag {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
     }
     .flash {
       position: absolute;

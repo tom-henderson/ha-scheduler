@@ -7,21 +7,27 @@ from custom_components.daily_schedule.const import (
     TYPE_REGISTRY,
     apply_params,
     is_active,
+    is_stateless,
     service_for,
     state_count,
     steps_for,
 )
 
 
-def test_every_type_has_off_state_first():
-    """Index 0 is the off/rest state for every registered type."""
-    for bar_type, defn in TYPE_REGISTRY.items():
+# Stateless types (e.g. trigger) hold no state and declare no `states` list.
+_STATEFUL_TYPES = [t for t in TYPE_REGISTRY if not is_stateless(t)]
+
+
+def test_every_stateful_type_has_off_state_first():
+    """Index 0 is the off/rest state for every stateful type."""
+    for bar_type in _STATEFUL_TYPES:
+        defn = TYPE_REGISTRY[bar_type]
         assert defn["states"], f"{bar_type} has no states"
         assert defn["states"][0]["key"] == "off", bar_type
         assert not is_active(bar_type, OFF_STATE), bar_type
 
 
-@pytest.mark.parametrize("bar_type", list(TYPE_REGISTRY))
+@pytest.mark.parametrize("bar_type", _STATEFUL_TYPES)
 def test_every_state_maps_to_a_valid_service(bar_type):
     """Each state resolves to a `<domain>.<service>` and merge-able data."""
     for index in range(state_count(bar_type)):
@@ -102,3 +108,14 @@ def test_apply_params_only_fills_keys_the_step_declares():
 
 def test_apply_params_keeps_defaults_when_segment_is_empty():
     assert apply_params({"volume_level": 0.4}, {}) == {"volume_level": 0.4}
+
+
+def test_trigger_type_is_stateless_with_action_options():
+    assert is_stateless("trigger")
+    assert not is_stateless("light")
+    t = TYPE_REGISTRY["trigger"]
+    assert "states" not in t
+    assert [a["key"] for a in t["actions"]] == ["scene", "script", "automation"]
+    # A stateless type's base clamps harmlessly to 0 (no states to index).
+    assert state_count("trigger") == 0
+    assert not is_active("trigger", 3)

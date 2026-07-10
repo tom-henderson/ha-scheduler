@@ -10,8 +10,8 @@ from __future__ import annotations
 import random
 from typing import Any, NamedTuple
 
-from .const import HOURS_PER_DAY, SNAP, is_active
-from .models import Bar, Schedule
+from .const import HOURS_PER_DAY, SNAP, is_active, is_stateless
+from .models import Bar, Schedule, Trigger
 
 
 class Interval(NamedTuple):
@@ -108,18 +108,28 @@ def resolve_from_plan(plan: list[ChangePoint], hour: float) -> int | None:
     return point.state if point is not None else None
 
 
+def jittered_trigger_at(trigger: Trigger, rng: random.Random) -> float:
+    """A trigger's fire time for the day, jittered by ±jitter, clamped to [0, 24)."""
+    j = trigger.jitter
+    at = trigger.at + (rng.uniform(-j, j) if j else 0.0)
+    return round(max(0.0, min(HOURS_PER_DAY - SNAP, at)), 6)
+
+
 def detect_conflicts(schedule: Schedule) -> dict[str, list[str]]:
     """Map each bar id -> names of enabled bars it conflicts with.
 
     Two enabled bars conflict when they share a target entity and their *active*
     segments overlap in time. Uses the un-jittered segments so the warning is
     stable and deterministic. Passive only — the engine never resolves these.
+
+    Stateless (trigger) bars hold no state and are excluded — two triggers may
+    share a moment harmlessly.
     """
     result: dict[str, list[str]] = {b.id: [] for b in schedule.bars}
     if not schedule.enabled:
         return result
 
-    bars = [b for b in schedule.bars if b.enabled]
+    bars = [b for b in schedule.bars if b.enabled and not is_stateless(b.type)]
     for i in range(len(bars)):
         for k in range(i + 1, len(bars)):
             a, b = bars[i], bars[k]

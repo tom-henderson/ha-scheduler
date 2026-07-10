@@ -9,9 +9,10 @@ from custom_components.daily_schedule.logic import (
     daily_changepoints,
     detect_conflicts,
     jittered_segments,
+    jittered_trigger_at,
     resolve_from_plan,
 )
-from custom_components.daily_schedule.models import Bar, Schedule
+from custom_components.daily_schedule.models import Bar, Schedule, Trigger
 
 
 def _bar(**kw):
@@ -227,6 +228,40 @@ def test_disabled_bar_excluded_from_conflicts():
          "enabled": False, "segments": [{"start": 6, "end": 12, "state": 1}]},
     )
     assert detect_conflicts(sched) == {"a": [], "b": []}
+
+
+def test_stateless_bars_are_excluded_from_conflicts():
+    # Two trigger bars sharing a target at the same moment are not a conflict —
+    # stateless bars hold no state.
+    sched = _sched(
+        {"id": "a", "name": "A", "type": "trigger", "targets": ["scene.x"],
+         "triggers": [{"at": 8, "action": {"service": "scene.turn_on",
+                                           "entity_id": "scene.x"}}]},
+        {"id": "b", "name": "B", "type": "trigger", "targets": ["scene.x"],
+         "triggers": [{"at": 8, "action": {"service": "scene.turn_on",
+                                           "entity_id": "scene.x"}}]},
+    )
+    assert detect_conflicts(sched) == {"a": [], "b": []}
+
+
+# -- trigger jitter ----------------------------------------------------------
+
+
+def test_jittered_trigger_at_zero_is_identity():
+    assert jittered_trigger_at(Trigger(at=7.0, jitter=0), random.Random(0)) == 7.0
+
+
+@pytest.mark.parametrize("seed", range(50))
+def test_jittered_trigger_at_stays_in_day(seed):
+    # A trigger near midnight with large jitter must stay within [0, 24).
+    v = jittered_trigger_at(Trigger(at=0.1, jitter=1.0), random.Random(seed))
+    assert 0 <= v <= 24 - 0.25
+
+
+def test_jittered_trigger_at_bounded_by_amount():
+    for seed in range(200):
+        v = jittered_trigger_at(Trigger(at=12.0, jitter=10 / 60), random.Random(seed))
+        assert abs(v - 12.0) <= 10 / 60 + 1e-9
 
 
 def test_disabled_schedule_has_no_conflicts():

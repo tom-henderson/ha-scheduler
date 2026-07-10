@@ -1,6 +1,6 @@
 """Tests for the data model: snapping, validation, serialization."""
 
-from custom_components.daily_schedule.models import Bar, Schedule, Segment, snap
+from custom_components.daily_schedule.models import Bar, Schedule, Segment, Trigger, snap
 
 
 def test_snap_rounds_to_quarter_hour():
@@ -118,6 +118,43 @@ def test_segment_data_defaults_empty_and_roundtrips():
 def test_segment_data_ignores_non_dict():
     seg = Segment.from_dict({"start": 1, "end": 2, "state": 1, "data": "nope"}, "climate")
     assert seg.data == {}
+
+
+def test_triggers_parse_sort_and_roundtrip():
+    bar = Bar.from_dict(
+        {
+            "name": "Scenes",
+            "type": "trigger",
+            "triggers": [
+                {"id": "t2", "at": 18, "jitter": 0.16,
+                 "action": {"service": "scene.turn_on", "entity_id": "scene.night"}},
+                {"id": "t1", "at": 7,
+                 "action": {"service": "scene.turn_on", "entity_id": "scene.wake"}},
+            ],
+        }
+    )
+    assert [t.id for t in bar.sorted_triggers()] == ["t1", "t2"]
+    out = bar.to_dict()
+    assert [t["at"] for t in out["triggers"]] == [7.0, 18.0]
+    assert isinstance(bar.triggers[0], Trigger)
+    # Idempotent serialization.
+    assert Bar.from_dict(out).to_dict() == out
+
+
+def test_trigger_time_snaps_to_grid():
+    t = Trigger.from_dict({"at": 7.1, "action": {"service": "scene.turn_on"}})
+    assert t.at == 7.0
+
+
+def test_range_bar_has_empty_triggers_and_stateless_base_clamps():
+    bar = Bar.from_dict(
+        {"name": "b", "type": "light", "segments": [{"start": 6, "end": 9, "state": 1}]}
+    )
+    assert bar.triggers == []
+    assert bar.to_dict()["triggers"] == []
+    # A trigger bar takes no state; base clamps to 0 without a states list.
+    trig = Bar.from_dict({"name": "t", "type": "trigger", "base": 3})
+    assert trig.base == 0
 
 
 def test_active_intervals_excludes_off_state():

@@ -168,6 +168,20 @@ export class DailyScheduleCard extends LitElement {
 
   private _addBar(type: string): void {
     this._menuOpen = false;
+    const def = this._types[type];
+    if (def?.kind === "stateless") {
+      const action = def.actions?.[0];
+      this._ws("add_bar", {
+        bar: {
+          name: "New triggers",
+          type,
+          targets: [],
+          enabled: true,
+          triggers: [{ at: 12, jitter: 0, action: { service: action?.service, entity_id: "" } }],
+        },
+      });
+      return;
+    }
     this._ws("add_bar", {
       bar: {
         name: "New schedule",
@@ -273,7 +287,11 @@ export class DailyScheduleCard extends LitElement {
                     <button @click=${() => this._addBar(k)}>
                       <ha-icon icon=${v.icon} style=${`color:${typeColor(k)}`}></ha-icon>
                       <span class="cap">${k}</span>
-                      <span class="states">${v.states.map((s) => s.label).join(" / ")}</span>
+                      <span class="states"
+                        >${v.kind === "stateless"
+                          ? (v.actions ?? []).map((a) => a.label).join(" / ")
+                          : (v.states ?? []).map((s) => s.label).join(" / ")}</span
+                      >
                     </button>
                   `
                 )}
