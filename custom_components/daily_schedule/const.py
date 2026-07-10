@@ -153,6 +153,53 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
             },
         ],
     },
+    # Media player. The active "Play" state runs a *sequence* of service calls —
+    # set the volume, then play the chosen media — rather than a single call.
+    # The media source and volume are per-segment parameters (see `param_schema`);
+    # `targets` may list several players (a speaker group) with no model change.
+    "media": {
+        "label": "Media player",
+        "icon": "mdi:speaker",
+        "param_schema": [
+            {
+                "key": "media",
+                "label": "Media",
+                "kind": "media",
+                # A media pick writes several flat keys onto the segment's data.
+                "keys": ["media_content_id", "media_content_type", "media_title"],
+            },
+            {
+                "key": "volume_level",
+                "label": "Volume",
+                "kind": "slider",
+                "min": 0,
+                "max": 1,
+                "step": 0.05,
+                "default": 0.4,
+            },
+        ],
+        "states": [
+            {"key": "off", "label": "Stopped", "service": "media_player.media_stop"},
+            {
+                "key": "play",
+                "label": "Play",
+                "color": "#e879c9",
+                "sequence": [
+                    {
+                        "service": "media_player.volume_set",
+                        "data": {"volume_level": 0.4},
+                    },
+                    {
+                        "service": "media_player.play_media",
+                        "data": {
+                            "media_content_id": "",
+                            "media_content_type": "music",
+                        },
+                    },
+                ],
+            },
+        ],
+    },
 }
 
 DEFAULT_TYPE: Final = "light"
@@ -178,11 +225,37 @@ def is_active(bar_type: str, state_index: int) -> bool:
     return clamp_state_index(bar_type, state_index) != OFF_STATE
 
 
-def service_for(bar_type: str, state_index: int) -> tuple[str, str, dict[str, Any]]:
-    """Resolve (domain, service, data) for a (type, state index).
+def steps_for(bar_type: str, state_index: int) -> list[tuple[str, str, dict[str, Any]]]:
+    """Resolve the ordered service call(s) for a (type, state index).
 
-    Raises KeyError only if the registry entry is malformed.
+    Most states are a single call; a state may instead declare a `sequence`
+    (e.g. media: set volume, then play). Each step is (domain, service, defaults)
+    where `defaults` are the registry-provided service data, before per-segment
+    parameters are applied (see `apply_params`).
     """
     state = type_def(bar_type)["states"][clamp_state_index(bar_type, state_index)]
-    domain, service = state["service"].split(".", 1)
-    return domain, service, dict(state.get("data", {}))
+    raw_steps = state["sequence"] if "sequence" in state else [state]
+    steps: list[tuple[str, str, dict[str, Any]]] = []
+    for step in raw_steps:
+        domain, service = step["service"].split(".", 1)
+        steps.append((domain, service, dict(step.get("data", {}))))
+    return steps
+
+
+def service_for(bar_type: str, state_index: int) -> tuple[str, str, dict[str, Any]]:
+    """Resolve the (domain, service, data) for a single-call state.
+
+    Convenience over `steps_for` for the simple types; returns the first step.
+    """
+    return steps_for(bar_type, state_index)[0]
+
+
+def apply_params(
+    defaults: dict[str, Any], seg_data: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge a segment's parameters over a step's registry defaults.
+
+    A step only picks up the parameters it declares (keys present in `defaults`),
+    so a segment's `volume_level` never leaks into `play_media` and vice-versa.
+    """
+    return {key: seg_data.get(key, value) for key, value in defaults.items()}

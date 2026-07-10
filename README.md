@@ -36,13 +36,18 @@ visual, drag-driven card. No YAML required for the common case.
 | `fan`     | Off / Low / Med / High       | `fan.turn_off` / `fan.set_percentage`            |
 | `switch`  | Off / On                     | `homeassistant.turn_off` / `homeassistant.turn_on` |
 | `climate` | Off / Heat / Cool / Auto     | `climate.turn_off` / `climate.set_temperature`   |
+| `media`   | Stopped / Play               | `media_player.media_stop` / `volume_set` + `play_media` |
 
-`climate` is the first type whose active states carry a **per-segment
-parameter** — the target temperature, edited with a stepper in the segment
-popover and stored on the segment. The HVAC mode is the state itself (so each
-segment is coloured by mode), and a type may declare such parameters via
+`climate` and `media` carry **per-segment parameters** — a climate segment's
+target temperature, or a media segment's source and volume — edited in the
+segment popover and stored on the segment. A type declares these via
 `param_schema` in the registry; the engine merges a segment's saved values over
 the state's defaults when it fires the service call.
+
+`media` also shows that a state can run a **sequence** of service calls (set the
+volume, then play), and that `targets` may list several players — a speaker
+group needs no special handling. Each step only receives the parameters it
+declares, so a segment's volume never leaks into `play_media`.
 
 The mapping is data-driven (`custom_components/daily_schedule/const.py`), so new
 device families can be added without touching the engine or the card.

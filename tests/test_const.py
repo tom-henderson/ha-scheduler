@@ -5,9 +5,11 @@ import pytest
 from custom_components.daily_schedule.const import (
     OFF_STATE,
     TYPE_REGISTRY,
+    apply_params,
     is_active,
     service_for,
     state_count,
+    steps_for,
 )
 
 
@@ -67,3 +69,36 @@ def test_service_for_climate_carries_mode_and_default_temp():
     assert "temperature" in data
     # Off turns the unit off and takes no data.
     assert service_for("climate", 0) == ("climate", "turn_off", {})
+
+
+def test_single_service_state_is_one_step():
+    assert steps_for("switch", 1) == [("homeassistant", "turn_on", {})]
+    assert steps_for("climate", 1)[0][:2] == ("climate", "set_temperature")
+    assert len(steps_for("climate", 1)) == 1
+
+
+def test_media_play_is_a_sequence_of_volume_then_play():
+    steps = steps_for("media", 1)  # play
+    assert [(d, s) for d, s, _ in steps] == [
+        ("media_player", "volume_set"),
+        ("media_player", "play_media"),
+    ]
+    # Stopped is a single call.
+    assert steps_for("media", 0) == [("media_player", "media_stop", {})]
+
+
+def test_apply_params_only_fills_keys_the_step_declares():
+    # The volume step takes volume_level; the play step takes the media keys.
+    # A segment carrying both must not leak volume into play_media or vice-versa.
+    seg = {"volume_level": 0.7, "media_content_id": "spotify:1", "media_title": "X"}
+    vol_defaults = {"volume_level": 0.4}
+    play_defaults = {"media_content_id": "", "media_content_type": "music"}
+    assert apply_params(vol_defaults, seg) == {"volume_level": 0.7}
+    assert apply_params(play_defaults, seg) == {
+        "media_content_id": "spotify:1",
+        "media_content_type": "music",
+    }
+
+
+def test_apply_params_keeps_defaults_when_segment_is_empty():
+    assert apply_params({"volume_level": 0.4}, {}) == {"volume_level": 0.4}

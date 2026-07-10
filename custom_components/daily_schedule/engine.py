@@ -17,7 +17,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import service_for
+from .const import apply_params, steps_for
 from .logic import (
     ChangePoint,
     cell_at,
@@ -140,24 +140,25 @@ class ScheduleEngine:
     async def _apply(self, bar: Bar, state: int, seg_data: dict[str, Any]) -> None:
         if not bar.targets:
             return
-        domain, service, data = service_for(bar.type, state)
-        # Per-segment parameters override the state's registry defaults (e.g. a
-        # climate segment's own target temperature over the mode default).
-        data = {**data, **(seg_data or {})}
-        try:
-            await self.hass.services.async_call(
-                domain,
-                service,
-                {"entity_id": list(bar.targets), **data},
-                blocking=False,
-            )
-        except Exception:  # noqa: BLE001 - never let one bar break the schedule
-            _LOGGER.exception(
-                "Daily Schedule: failed to apply %s.%s to %s",
-                domain,
-                service,
-                bar.targets,
-            )
+        # A state may be a single call or an ordered sequence (e.g. media: set
+        # volume, then play). Each step merges the segment's own parameters over
+        # its registry defaults.
+        for domain, service, defaults in steps_for(bar.type, state):
+            data = apply_params(defaults, seg_data or {})
+            try:
+                await self.hass.services.async_call(
+                    domain,
+                    service,
+                    {"entity_id": list(bar.targets), **data},
+                    blocking=False,
+                )
+            except Exception:  # noqa: BLE001 - never let one bar break the schedule
+                _LOGGER.exception(
+                    "Daily Schedule: failed to apply %s.%s to %s",
+                    domain,
+                    service,
+                    bar.targets,
+                )
 
     # -- daily rebuild -----------------------------------------------------
 

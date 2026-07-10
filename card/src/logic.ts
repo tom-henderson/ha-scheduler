@@ -47,6 +47,11 @@ export function paramSchema(types: TypeRegistry, type: string): TypeParam[] {
   return types[type]?.param_schema ?? [];
 }
 
+/** The segment-data keys a param owns (media writes several; others just one). */
+export function paramKeys(p: TypeParam): string[] {
+  return p.keys ?? [p.key];
+}
+
 /**
  * Effective value of a param for a segment: the segment's own `data`, else the
  * selected state's registry default, else the schema default.
@@ -73,9 +78,15 @@ export function paramSummary(
 ): string {
   return paramSchema(types, type)
     .map((p) => {
+      if (p.kind === "media") {
+        const title = seg.data?.media_title ?? seg.data?.media_content_id;
+        return title ? String(title) : "";
+      }
       const v = paramValue(types, type, seg.state, seg, p);
       if (v === undefined || v === null || v === "") return "";
-      return p.kind === "number" ? `${v}${p.unit ?? ""}` : String(v);
+      if (p.kind === "slider") return `${Math.round(Number(v) * 100)}%`;
+      if (p.kind === "number") return `${v}${p.unit ?? ""}`;
+      return String(v);
     })
     .filter(Boolean)
     .join(" · ");

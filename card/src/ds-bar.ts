@@ -227,6 +227,7 @@ export class DsBar extends LitElement {
 
         ${editingSeg
           ? html`<ds-segment-editor
+              .hass=${this.hass}
               .segment=${editingSeg}
               .type=${this.bar.type}
               .types=${this.types}
