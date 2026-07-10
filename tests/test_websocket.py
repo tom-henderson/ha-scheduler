@@ -129,7 +129,8 @@ async def test_reorder_bars(hass, hass_ws_client, setup):
     msg = await client.receive_json()
     assert msg["success"]
     assert [b["name"] for b in msg["result"]["bars"]] == ["C", "A", "B"]
-    assert [b["id"] for b in setup.runtime_data.schedule.bars] == [ids[2], ids[0], ids[1]]
+    # setup.runtime_data.schedule.bars holds Bar dataclasses, not dicts.
+    assert [b.id for b in setup.runtime_data.schedule.bars] == [ids[2], ids[0], ids[1]]
 
     # A partial order keeps unmentioned bars at the end in their current order.
     await client.send_json_auto_id(
