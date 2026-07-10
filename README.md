@@ -112,6 +112,8 @@ With a single Daily Schedule set up, the card auto-selects it.
   state applied to all uncovered time.
 - **+** adds a segment in the largest free gap and opens its editor.
 - **⚙** edits the bar's name and target entities (standard HA entity picker).
+- **Drag the ⠿ grip** on the left of a bar's header up or down to **reorder**
+  bars. Order is presentational only — it doesn't affect scheduling.
 - **Sync now** sets every entity to its current scheduled state on demand.
 
 ## Service

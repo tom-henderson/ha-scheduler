@@ -36,6 +36,7 @@ export class DsBar extends LitElement {
   @property({ attribute: false }) conflicts: string[] = [];
   @property({ type: Number }) now = 0;
   @property({ type: Boolean }) syncing = false;
+  @property({ type: Boolean }) reordering = false;
 
   @state() private _editing: string | null = null; // segment id or "__base__"
   @state() private _drag: { id: string; mode: DragMode } | null = null;
@@ -48,6 +49,18 @@ export class DsBar extends LitElement {
   private _emit(bar: Bar, commit: boolean): void {
     this.dispatchEvent(new CustomEvent("bar-change", { detail: { bar, commit } }));
   }
+
+  private _reorderDown = (e: PointerEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    this.dispatchEvent(
+      new CustomEvent("bar-reorder-start", {
+        detail: { id: this.bar.id, clientY: e.clientY },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  };
 
   // -- editing actions --------------------------------------------------
 
@@ -213,8 +226,19 @@ export class DsBar extends LitElement {
     const editingTrg = this._triggers.find((tr) => tr.id === this._editing);
 
     return html`
-      <div class="bar" style=${`opacity:${this._live ? 1 : 0.4};--accent:${accent}`}>
+      <div
+        class=${`bar ${this.reordering ? "reordering" : ""}`}
+        style=${`opacity:${this._live ? 1 : 0.4};--accent:${accent}`}
+      >
         <div class="head">
+          <button
+            class="grip"
+            title="Drag to reorder"
+            @pointerdown=${this._reorderDown}
+            @click=${(e: Event) => e.stopPropagation()}
+          >
+            <ha-icon icon="mdi:drag-horizontal-variant"></ha-icon>
+          </button>
           <div class="icon"><ha-icon icon=${t?.icon ?? "mdi:calendar"}></ha-icon></div>
           <div class="meta">
             <div class="name">
@@ -455,11 +479,42 @@ function barStyles() {
       position: relative;
       transition: opacity 0.2s;
     }
+    .bar.reordering {
+      z-index: 5;
+    }
+    .bar.reordering .head,
+    .bar.reordering .track {
+      outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+      outline-offset: 3px;
+      border-radius: 8px;
+    }
+    .bar.reordering .track {
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+    }
     .head {
       display: flex;
       align-items: center;
       gap: 10px;
       margin-bottom: 7px;
+    }
+    .grip {
+      width: 20px;
+      height: 30px;
+      flex-shrink: 0;
+      border: none;
+      background: transparent;
+      color: var(--ds-dim);
+      cursor: grab;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      touch-action: none;
+    }
+    .grip:hover {
+      color: var(--ds-text);
+    }
+    .grip:active {
+      cursor: grabbing;
     }
     .icon {
       width: 30px;

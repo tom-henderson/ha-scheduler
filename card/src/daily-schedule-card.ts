@@ -34,6 +34,7 @@ export class DailyScheduleCard extends LitElement {
   @state() private _now = nowHours();
   @state() private _syncing = false;
   @state() private _menuOpen = false;
+  @state() private _reorderId?: string;
 
   private _unsub?: Promise<() => void>;
   private _nowTimer?: number;
@@ -166,6 +167,51 @@ export class DailyScheduleCard extends LitElement {
     window.setTimeout(() => (this._syncing = false), 1400);
   }
 
+  // -- bar reordering (drag the grip up/down) ---------------------------
+
+  private _onReorderStart = (e: Event): void => {
+    if (!this._schedule) return;
+    this._reorderId = (e as CustomEvent<{ id: string }>).detail.id;
+    const move = (ev: PointerEvent): void => this._onReorderMove(ev);
+    const up = (): void => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      const order = this._schedule?.bars.map((b) => b.id) ?? [];
+      this._reorderId = undefined;
+      this._ws("reorder_bars", { order });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
+  private _onReorderMove(ev: PointerEvent): void {
+    if (!this._reorderId || !this._schedule) return;
+    const bars = this._schedule.bars;
+    const dragged = bars.find((b) => b.id === this._reorderId);
+    if (!dragged) return;
+    const els = [...this.renderRoot.querySelectorAll("ds-bar")] as HTMLElement[];
+    const rectById = new Map<string, DOMRect>();
+    bars.forEach((b, i) => {
+      const r = els[i]?.getBoundingClientRect();
+      if (r) rectById.set(b.id, r);
+    });
+    // Insert the dragged bar before the first *other* bar whose midpoint is
+    // below the pointer; measuring only the non-dragged bars keeps it stable.
+    const rest = bars.filter((b) => b.id !== this._reorderId);
+    let insert = rest.length;
+    for (let i = 0; i < rest.length; i++) {
+      const r = rectById.get(rest[i].id);
+      if (r && ev.clientY < r.top + r.height / 2) {
+        insert = i;
+        break;
+      }
+    }
+    const next = [...rest.slice(0, insert), dragged, ...rest.slice(insert)];
+    if (next.some((b, i) => b.id !== bars[i].id)) {
+      this._schedule = { ...this._schedule, bars: next };
+    }
+  }
+
   private _addBar(type: string): void {
     this._menuOpen = false;
     const def = this._types[type];
@@ -251,7 +297,7 @@ export class DailyScheduleCard extends LitElement {
           <span class="now-label" style=${`left:${(this._now / HOURS) * 100}%`}>${fmt(this._now)}</span>
         </div>
 
-        <div class="bars">
+        <div class="bars" @bar-reorder-start=${this._onReorderStart}>
           <div class="gridlines">
             ${[6, 12, 18].map(
               (h) => html`<div class="gl" style=${`left:${(h / HOURS) * 100}%`}></div>`
@@ -267,6 +313,7 @@ export class DailyScheduleCard extends LitElement {
                 .conflicts=${sched.conflicts?.[bar.id] ?? []}
                 .now=${this._now}
                 .syncing=${this._syncing}
+                .reordering=${bar.id === this._reorderId}
                 @bar-change=${(e: CustomEvent<{ bar: Bar; commit: boolean }>) =>
                   this._onBarChange(e.detail.bar, e.detail.commit)}
                 @bar-remove=${() => this._ws("delete_bar", { bar_id: bar.id })}
@@ -302,7 +349,8 @@ export class DailyScheduleCard extends LitElement {
 
       <div class="footer">
         Striped/plain fill = default state (click to change) · tap a segment to edit state, times
-        &amp; jitter · drag to move or resize · per-bar toggle on the right
+        &amp; jitter · drag to move or resize · drag the ⠿ grip to reorder bars · per-bar toggle on
+        the right
       </div>
     `);
   }

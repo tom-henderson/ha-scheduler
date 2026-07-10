@@ -28,6 +28,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
         ws_update_bar,
         ws_delete_bar,
         ws_duplicate_bar,
+        ws_reorder_bars,
         ws_sync_now,
     ):
         websocket_api.async_register_command(hass, handler)
@@ -210,6 +211,20 @@ async def ws_duplicate_bar(hass, connection, msg, manager: ScheduleManager) -> N
     connection.send_result(
         msg["id"], {"bar_id": bar.id, **manager.as_frontend_dict()}
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/reorder_bars",
+        _ENTRY: str,
+        vol.Required("order"): [str],
+    }
+)
+@websocket_api.async_response
+@_with_manager
+async def ws_reorder_bars(hass, connection, msg, manager: ScheduleManager) -> None:
+    await manager.async_reorder_bars(msg["order"])
+    connection.send_result(msg["id"], manager.as_frontend_dict())
 
 
 @websocket_api.websocket_command(
