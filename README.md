@@ -28,12 +28,13 @@ visual, drag-driven card. No YAML required for the common case.
 
 ## Supported device types
 
-| Type    | States                    | Services used                              |
-| ------- | ------------------------- | ------------------------------------------ |
-| `light` | Off / On                  | `light.turn_off` / `light.turn_on`         |
-| `blind` | Closed / Open             | `cover.close_cover` / `cover.open_cover`   |
-| `water` | Off / Watering            | `switch.turn_off` / `switch.turn_on`       |
-| `fan`   | Off / Low / Med / High    | `fan.turn_off` / `fan.set_percentage`      |
+| Type     | States                    | Services used                                    |
+| -------- | ------------------------- | ------------------------------------------------ |
+| `light`  | Off / On                  | `light.turn_off` / `light.turn_on`               |
+| `blind`  | Closed / Open             | `cover.close_cover` / `cover.open_cover`         |
+| `water`  | Off / Watering            | `switch.turn_off` / `switch.turn_on`             |
+| `fan`    | Off / Low / Med / High    | `fan.turn_off` / `fan.set_percentage`            |
+| `switch` | Off / On                  | `homeassistant.turn_off` / `homeassistant.turn_on` |
 
 The mapping is data-driven (`custom_components/daily_schedule/const.py`), so new
 device families can be added without touching the engine or the card.
