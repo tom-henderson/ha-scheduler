@@ -25,6 +25,7 @@ export const TYPE_COLORS: Record<string, string> = {
   fan: "#5ad19a",
   switch: "#a78bfa",
   climate: "#ff7a66",
+  media: "#e879c9",
 };
 
 /** Entity domains offered in the target picker for each device type. */
@@ -35,6 +36,7 @@ export const TYPE_DOMAINS: Record<string, string[]> = {
   fan: ["fan"],
   switch: ["switch", "input_boolean"],
   climate: ["climate"],
+  media: ["media_player"],
 };
 
 export const DEFAULT_TYPE_COLOR = "var(--primary-color)";

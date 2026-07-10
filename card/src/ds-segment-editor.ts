@@ -2,9 +2,16 @@ import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import { JITTERS } from "./const";
-import { fmt, isActive, paramSchema, paramValue, parse } from "./logic";
+import { fmt, isActive, paramKeys, paramSchema, paramValue, parse } from "./logic";
 import { sharedStyles } from "./styles";
-import type { Segment, TypeParam, TypeRegistry } from "./types";
+import type { HomeAssistant, Segment, TypeParam, TypeRegistry } from "./types";
+
+/** Value shape emitted by HA's media selector. */
+interface MediaValue {
+  media_content_id?: string;
+  media_content_type?: string;
+  metadata?: { title?: string };
+}
 
 /**
  * Popover to edit a segment's state, start/end times and jitter. Emits
@@ -100,9 +107,16 @@ export class DsSegmentEditor extends LitElement {
         font-variant-numeric: tabular-nums;
         color: var(--ds-text);
       }
+      input.range {
+        width: 100%;
+        margin: 4px 0 2px;
+        accent-color: var(--accent, var(--ds-accent));
+        cursor: pointer;
+      }
     `,
   ];
 
+  @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) segment!: Segment;
   @property() type!: string;
   @property({ attribute: false }) types!: TypeRegistry;
@@ -160,8 +174,9 @@ export class DsSegmentEditor extends LitElement {
     if (ps < this.bounds.min || pe > this.bounds.max)
       return this._fail(`Stay within ${fmt(this.bounds.min)}–${fmt(this.bounds.max)}`);
     // Persist only the params that apply to the chosen state; an off segment
-    // carries none.
-    const keep = new Set(this._params.map((p) => p.key));
+    // carries none. A media param owns several data keys.
+    const keep = new Set<string>();
+    for (const p of this._params) for (const k of paramKeys(p)) keep.add(k);
     const data: Record<string, unknown> = {};
     for (const k of keep) if (this._data[k] !== undefined) data[k] = this._data[k];
     this.dispatchEvent(
@@ -259,25 +274,32 @@ export class DsSegmentEditor extends LitElement {
   }
 
   private _renderParam(p: TypeParam) {
-    if (p.kind === "select") {
-      const cur = String(paramValue(this.types, this.type, this._si, { data: this._data }, p) ?? "");
-      return html`
-        <div class="field-label" style="margin-top:12px">${p.label}</div>
-        <div class="state-buttons" style=${`--accent:${this.accent}`}>
-          ${(p.options ?? []).map(
-            (o) => html`
-              <button
-                class=${o.value === cur ? "sel" : ""}
-                @click=${() => this._setParam(p.key, o.value)}
-              >
-                ${o.label}
-              </button>
-            `
-          )}
-        </div>
-      `;
-    }
-    // number
+    if (p.kind === "select") return this._renderSelect(p);
+    if (p.kind === "slider") return this._renderSlider(p);
+    if (p.kind === "media") return this._renderMedia(p);
+    return this._renderStepper(p);
+  }
+
+  private _renderSelect(p: TypeParam) {
+    const cur = String(paramValue(this.types, this.type, this._si, { data: this._data }, p) ?? "");
+    return html`
+      <div class="field-label" style="margin-top:12px">${p.label}</div>
+      <div class="state-buttons" style=${`--accent:${this.accent}`}>
+        ${(p.options ?? []).map(
+          (o) => html`
+            <button
+              class=${o.value === cur ? "sel" : ""}
+              @click=${() => this._setParam(p.key, o.value)}
+            >
+              ${o.label}
+            </button>
+          `
+        )}
+      </div>
+    `;
+  }
+
+  private _renderStepper(p: TypeParam) {
     const val = this._paramNumber(p);
     const step = p.step ?? 1;
     const dp = step < 1 ? 1 : 0;
@@ -301,6 +323,55 @@ export class DsSegmentEditor extends LitElement {
         </button>
       </div>
     `;
+  }
+
+  private _renderSlider(p: TypeParam) {
+    const val = this._paramNumber(p);
+    return html`
+      <div class="field-label" style="margin-top:12px;display:flex;align-items:center">
+        ${p.label}
+        <span style="margin-left:auto;color:var(--ds-text);font-weight:700"
+          >${Math.round(val * 100)}%</span
+        >
+      </div>
+      <input
+        class="range"
+        style=${`--accent:${this.accent}`}
+        type="range"
+        min=${p.min ?? 0}
+        max=${p.max ?? 1}
+        step=${p.step ?? 0.05}
+        .value=${String(val)}
+        @input=${(e: Event) =>
+          this._setParam(p.key, Number((e.target as HTMLInputElement).value))}
+      />
+    `;
+  }
+
+  private _renderMedia(p: TypeParam) {
+    const value = {
+      media_content_id: this._data.media_content_id,
+      media_content_type: this._data.media_content_type,
+    };
+    return html`
+      <div class="field-label" style="margin-top:12px">${p.label}</div>
+      <ha-selector
+        .hass=${this.hass}
+        .selector=${{ media: {} }}
+        .value=${value}
+        @value-changed=${(e: CustomEvent<{ value: MediaValue }>) =>
+          this._onMedia(e.detail.value)}
+      ></ha-selector>
+    `;
+  }
+
+  private _onMedia(value: MediaValue | undefined): void {
+    this._data = {
+      ...this._data,
+      media_content_id: value?.media_content_id,
+      media_content_type: value?.media_content_type ?? "music",
+      media_title: value?.metadata?.title,
+    };
   }
 
   private _close = () => this.dispatchEvent(new CustomEvent("popover-close"));

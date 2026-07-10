@@ -40,8 +40,8 @@ export interface TypeState {
 export interface TypeParam {
   key: string;
   label: string;
-  kind: "number" | "select";
-  // number
+  kind: "number" | "slider" | "select" | "media";
+  // number / slider
   min?: number;
   max?: number;
   step?: number;
@@ -49,6 +49,8 @@ export interface TypeParam {
   default?: number | string;
   // select
   options?: { value: string; label: string }[];
+  /** Data keys this param owns; defaults to [key]. Media writes several. */
+  keys?: string[];
 }
 
 export interface TypeDef {
