@@ -5,6 +5,7 @@ import random
 import pytest
 
 from custom_components.daily_schedule.logic import (
+    cell_at,
     daily_changepoints,
     detect_conflicts,
     jittered_segments,
@@ -69,13 +70,59 @@ def test_resolve_from_plan_before_first_point_is_none():
     assert resolve_from_plan([], 5) is None
 
 
+# -- per-segment data (climate etc.) ----------------------------------------
+
+
+def test_changepoints_carry_segment_data():
+    bar = _bar(
+        type="climate",
+        segments=[{"start": 6, "end": 9, "state": 1, "data": {"temperature": 21}}],
+    )
+    plan = daily_changepoints(bar, jittered_segments(bar, random.Random(0)))
+    assert [(p.hour, p.state, p.data) for p in plan] == [
+        (0.0, 0, {}),
+        (6.0, 1, {"temperature": 21}),
+        (9.0, 0, {}),
+    ]
+
+
+def test_adjacent_same_state_different_data_still_transitions():
+    # Two touching Heat segments at different temperatures must not be merged —
+    # the engine has to re-fire set_temperature at the boundary.
+    bar = _bar(
+        type="climate",
+        segments=[
+            {"start": 6, "end": 9, "state": 1, "data": {"temperature": 20}},
+            {"start": 9, "end": 12, "state": 1, "data": {"temperature": 22}},
+        ],
+    )
+    plan = daily_changepoints(bar, jittered_segments(bar, random.Random(0)))
+    assert [(p.hour, p.data.get("temperature")) for p in plan] == [
+        (0.0, None),
+        (6.0, 20),
+        (9.0, 22),
+        (12.0, None),
+    ]
+
+
+def test_cell_at_returns_state_and_data():
+    bar = _bar(
+        type="climate",
+        segments=[{"start": 6, "end": 9, "state": 1, "data": {"temperature": 21}}],
+    )
+    plan = daily_changepoints(bar, jittered_segments(bar, random.Random(0)))
+    assert cell_at(plan, 7).data == {"temperature": 21}
+    assert cell_at(plan, 0).state == 0
+    assert cell_at([], 5) is None
+
+
 # -- jitter ------------------------------------------------------------------
 
 
 def test_jitter_zero_is_identity():
     bar = _bar(segments=[{"start": 6, "end": 9, "state": 1, "jitter": 0}])
     js = jittered_segments(bar, random.Random(123))
-    assert js == [(6.0, 9.0, 1)]
+    assert js == [(6.0, 9.0, 1, {})]
 
 
 @pytest.mark.parametrize("seed", range(50))
@@ -88,7 +135,7 @@ def test_jitter_never_reorders_or_overlaps_touching_segments(seed):
         ]
     )
     js = jittered_segments(bar, random.Random(seed))
-    (a_start, a_end, _), (b_start, b_end, _) = js
+    (a_start, a_end, *_), (b_start, b_end, *_) = js
     # No overlap and correct order.
     assert a_start < a_end <= b_start < b_end
     # Neither boundary crosses the original shared boundary at 6.0.
@@ -99,7 +146,7 @@ def test_jitter_never_reorders_or_overlaps_touching_segments(seed):
 @pytest.mark.parametrize("seed", range(50))
 def test_jitter_stays_within_bounds_and_min_width(seed):
     bar = _bar(segments=[{"start": 8, "end": 8.5, "state": 1, "jitter": 0.5}])
-    (start, end, _) = jittered_segments(bar, random.Random(seed))[0]
+    (start, end, *_) = jittered_segments(bar, random.Random(seed))[0]
     assert 0 <= start < end <= 24
     assert end - start >= 0.25  # min 15-min width preserved
 
@@ -107,7 +154,7 @@ def test_jitter_stays_within_bounds_and_min_width(seed):
 def test_jitter_bounded_by_amount():
     bar = _bar(segments=[{"start": 10, "end": 14, "state": 1, "jitter": 10 / 60}])
     for seed in range(200):
-        (start, end, _) = jittered_segments(bar, random.Random(seed))[0]
+        (start, end, *_) = jittered_segments(bar, random.Random(seed))[0]
         assert abs(start - 10) <= 10 / 60 + 1e-9
         assert abs(end - 14) <= 10 / 60 + 1e-9
 

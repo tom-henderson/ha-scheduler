@@ -8,7 +8,7 @@ functions to HA timers and service calls.
 from __future__ import annotations
 
 import random
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from .const import HOURS_PER_DAY, SNAP, is_active
 from .models import Bar, Schedule
@@ -20,13 +20,19 @@ class Interval(NamedTuple):
     start: float
     end: float
     state: int
+    data: dict[str, Any] = {}
 
 
 class ChangePoint(NamedTuple):
-    """A transition: from `hour` onward (until the next point) state applies."""
+    """A transition: from `hour` onward (until the next point) state applies.
+
+    `data` carries the covering segment's per-segment parameters (e.g. a climate
+    temperature); it is `{}` for the base region and the simple on/off types.
+    """
 
     hour: float
     state: int
+    data: dict[str, Any] = {}
 
 
 def jittered_segments(bar: Bar, rng: random.Random) -> list[Interval]:
@@ -51,7 +57,7 @@ def jittered_segments(bar: Bar, rng: random.Random) -> list[Interval]:
         end = min(next_start, max(end, seg.start))
         if end - start < SNAP:  # jitter collapsed the span — fall back to exact
             start, end = seg.start, seg.end
-        out.append(Interval(round(start, 6), round(end, 6), seg.state))
+        out.append(Interval(round(start, 6), round(end, 6), seg.state, seg.data))
     return out
 
 
@@ -68,29 +74,38 @@ def daily_changepoints(bar: Bar, intervals: list[Interval]) -> list[ChangePoint]
         bounds.add(iv.end)
     ordered = sorted(b for b in bounds if 0.0 <= b < HOURS_PER_DAY)
 
-    def resolve(hour: float) -> int:
+    def resolve(hour: float) -> tuple[int, dict[str, Any]]:
         for iv in intervals:
             if iv.start <= hour < iv.end:
-                return iv.state
-        return bar.base
+                return iv.state, iv.data
+        return bar.base, {}
 
     points: list[ChangePoint] = []
     for hour in ordered:
-        state = resolve(hour)
-        if not points or points[-1].state != state:
-            points.append(ChangePoint(round(hour, 6), state))
+        state, data = resolve(hour)
+        # Split on either the state OR its parameters changing, so two adjacent
+        # segments with the same state but different data (e.g. Heat 20° then
+        # Heat 22°) still produce a real transition.
+        if not points or (points[-1].state, points[-1].data) != (state, data):
+            points.append(ChangePoint(round(hour, 6), state, data))
     return points
+
+
+def cell_at(plan: list[ChangePoint], hour: float) -> ChangePoint | None:
+    """The change-point in effect at `hour` (the last one at/before it)."""
+    current: ChangePoint | None = None
+    for point in plan:
+        if point.hour <= hour:
+            current = point
+        else:
+            break
+    return current
 
 
 def resolve_from_plan(plan: list[ChangePoint], hour: float) -> int | None:
     """State effective at `hour` given a day plan (last change-point at/before)."""
-    current: int | None = None
-    for point in plan:
-        if point.hour <= hour:
-            current = point.state
-        else:
-            break
-    return current
+    point = cell_at(plan, hour)
+    return point.state if point is not None else None
 
 
 def detect_conflicts(schedule: Schedule) -> dict[str, list[str]]:

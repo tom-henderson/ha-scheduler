@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import (
@@ -20,9 +20,9 @@ from homeassistant.util import dt as dt_util
 from .const import service_for
 from .logic import (
     ChangePoint,
+    cell_at,
     daily_changepoints,
     jittered_segments,
-    resolve_from_plan,
 )
 from .models import Bar
 
@@ -100,7 +100,9 @@ class ScheduleEngine:
                     continue
                 self._boundary_unsubs.append(
                     async_track_point_in_time(
-                        self.hass, self._make_boundary_cb(bar, point.state), when
+                        self.hass,
+                        self._make_boundary_cb(bar, point.state, point.data),
+                        when,
                     )
                 )
 
@@ -111,12 +113,12 @@ class ScheduleEngine:
 
     # -- execution ---------------------------------------------------------
 
-    def _make_boundary_cb(self, bar: Bar, state: int):
+    def _make_boundary_cb(self, bar: Bar, state: int, data: dict[str, Any]):
         @callback
         def _fire(_now: datetime) -> None:
             if not self._schedule.enabled or not bar.enabled:
                 return
-            self.hass.async_create_task(self._apply(bar, state))
+            self.hass.async_create_task(self._apply(bar, state, data))
 
         return _fire
 
@@ -131,15 +133,17 @@ class ScheduleEngine:
             plan = self._plans.get(bar.id)
             if not plan:
                 continue
-            state = resolve_from_plan(plan, now_hour)
-            if state is None:
-                state = bar.base
-            await self._apply(bar, state)
+            point = cell_at(plan, now_hour)
+            state, seg_data = (point.state, point.data) if point else (bar.base, {})
+            await self._apply(bar, state, seg_data)
 
-    async def _apply(self, bar: Bar, state: int) -> None:
+    async def _apply(self, bar: Bar, state: int, seg_data: dict[str, Any]) -> None:
         if not bar.targets:
             return
         domain, service, data = service_for(bar.type, state)
+        # Per-segment parameters override the state's registry defaults (e.g. a
+        # climate segment's own target temperature over the mode default).
+        data = {**data, **(seg_data or {})}
         try:
             await self.hass.services.async_call(
                 domain,

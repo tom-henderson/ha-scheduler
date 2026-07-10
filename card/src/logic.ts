@@ -1,5 +1,5 @@
-import { HOURS, JITTERS, SNAP, MIN_SEGMENT } from "./const";
-import type { Bar, Segment, TypeRegistry } from "./types";
+import { HOURS, JITTERS, SNAP, MIN_SEGMENT, typeColor } from "./const";
+import type { Bar, Segment, TypeParam, TypeRegistry } from "./types";
 
 /** Format hours (0-24) as HH:MM. */
 export function fmt(h: number): string {
@@ -35,6 +35,50 @@ export function isActive(types: TypeRegistry, type: string, stateIndex: number):
 
 export function stateLabel(types: TypeRegistry, type: string, stateIndex: number): string {
   return types[type]?.states[stateIndex]?.label ?? String(stateIndex);
+}
+
+/** Accent for a state: its own `color` if set (e.g. climate modes), else the type's. */
+export function stateColor(types: TypeRegistry, type: string, stateIndex: number): string {
+  return types[type]?.states[stateIndex]?.color ?? typeColor(type);
+}
+
+/** The param schema for a type, or an empty list. */
+export function paramSchema(types: TypeRegistry, type: string): TypeParam[] {
+  return types[type]?.param_schema ?? [];
+}
+
+/**
+ * Effective value of a param for a segment: the segment's own `data`, else the
+ * selected state's registry default, else the schema default.
+ */
+export function paramValue(
+  types: TypeRegistry,
+  type: string,
+  stateIndex: number,
+  seg: Pick<Segment, "data">,
+  param: TypeParam
+): unknown {
+  const fromSeg = seg.data?.[param.key];
+  if (fromSeg !== undefined) return fromSeg;
+  const fromState = types[type]?.states[stateIndex]?.data?.[param.key];
+  if (fromState !== undefined) return fromState;
+  return param.default;
+}
+
+/** A compact summary of a segment's params for the timeline label, e.g. "21°". */
+export function paramSummary(
+  types: TypeRegistry,
+  type: string,
+  seg: Segment
+): string {
+  return paramSchema(types, type)
+    .map((p) => {
+      const v = paramValue(types, type, seg.state, seg, p);
+      if (v === undefined || v === null || v === "") return "";
+      return p.kind === "number" ? `${v}${p.unit ?? ""}` : String(v);
+    })
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export function jitterLabel(v: number): string {
