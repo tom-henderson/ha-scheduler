@@ -17,7 +17,7 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import apply_params, is_stateless, step_should_fire, steps_for
+from .const import apply_params, is_stateless, prune_empty, step_should_fire, steps_for
 from .logic import (
     ChangePoint,
     cell_at,
@@ -187,6 +187,7 @@ class ScheduleEngine:
             data = apply_params(step.data, seg_data or {})
             if not step_should_fire(step, data):
                 continue
+            data = prune_empty(data)  # don't send blank optional fields
             try:
                 await self.hass.services.async_call(
                     step.domain,

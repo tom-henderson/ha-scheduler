@@ -149,14 +149,17 @@ export class DsSegmentEditor extends LitElement {
       this._data = { ...(this.segment.data ?? {}) };
       this._err = "";
     }
-    this._seedRequiredSelects();
+    this._seedSelects();
   }
 
-  /** Default a required select (e.g. climate mode) to the first option the
-   * target entity offers, so a new active segment carries a valid value. */
-  private _seedRequiredSelects(): void {
+  /** Default every select the target entity offers options for to its first
+   * option, so a new active segment carries a value for each supported setting.
+   * IR climate (e.g. SmartIR) re-sends the whole config on each call, so leaving
+   * fan/swing unset would bake a stale value into the signal — seeding avoids
+   * that. Selects the entity can't fill (no options) stay empty and are skipped. */
+  private _seedSelects(): void {
     for (const p of this._params) {
-      if (p.kind !== "select" || p.optional) continue;
+      if (p.kind !== "select") continue;
       const cur = this._data[p.key];
       if (cur !== undefined && cur !== "") continue;
       const opts = paramOptions(this.hass, this.entities, p);

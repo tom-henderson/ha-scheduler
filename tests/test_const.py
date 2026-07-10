@@ -8,6 +8,7 @@ from custom_components.daily_schedule.const import (
     apply_params,
     is_active,
     is_stateless,
+    prune_empty,
     service_for,
     state_count,
     step_should_fire,
@@ -56,26 +57,30 @@ def test_climate_is_off_on_with_dynamic_mode_params():
     assert [s["key"] for s in climate["states"]] == ["off", "on"]
     assert not is_active("climate", 0)
     assert is_active("climate", 1)
-    # Mode and fan options come from the target entity, not a fixed list.
+    # Mode, fan and swing options all come from the target entity, not a list.
     schema = {p["key"]: p for p in climate["param_schema"]}
     assert schema["hvac_mode"]["options_attribute"] == "hvac_modes"
     assert schema["fan_mode"]["options_attribute"] == "fan_modes"
+    assert schema["swing_mode"]["options_attribute"] == "swing_modes"
     assert schema["fan_mode"]["optional"] is True
+    assert schema["swing_mode"]["optional"] is True
     assert schema["temperature"]["kind"] == "number"
 
 
-def test_climate_on_is_mode_temp_fan_sequence_with_requires():
+def test_climate_on_sets_every_supported_setting():
+    # The mode is folded into set_temperature (one fewer IR transmission); fan
+    # and swing follow, each fired only when the entity exposes it.
     steps = steps_for("climate", 1)  # on
     assert [(s.domain, s.service) for s in steps] == [
-        ("climate", "set_hvac_mode"),
         ("climate", "set_temperature"),
         ("climate", "set_fan_mode"),
+        ("climate", "set_swing_mode"),
     ]
-    # The mode and fan steps only fire when their param is set.
     by_service = {s.service: s for s in steps}
-    assert by_service["set_hvac_mode"].require == ("hvac_mode",)
-    assert by_service["set_fan_mode"].require == ("fan_mode",)
+    assert "hvac_mode" in by_service["set_temperature"].data
     assert by_service["set_temperature"].require == ()
+    assert by_service["set_fan_mode"].require == ("fan_mode",)
+    assert by_service["set_swing_mode"].require == ("swing_mode",)
     # Off is a single call with no data.
     assert service_for("climate", 0) == ("climate", "turn_off", {})
 
@@ -88,6 +93,23 @@ def test_step_should_fire_skips_empty_required_params():
     # A step with no requirements always fires.
     temp_step = next(s for s in steps_for("climate", 1) if s.service == "set_temperature")
     assert step_should_fire(temp_step, {"temperature": 20})
+
+
+def test_prune_empty_drops_blank_fields():
+    # set_temperature must not send a blank hvac_mode, but keeps 0 / False.
+    assert prune_empty({"hvac_mode": "", "temperature": 21}) == {"temperature": 21}
+    assert prune_empty({"hvac_mode": "heat", "temperature": 21}) == {
+        "hvac_mode": "heat",
+        "temperature": 21,
+    }
+    assert prune_empty({"volume_level": 0}) == {"volume_level": 0}
+
+
+def test_media_play_requires_a_chosen_media():
+    play = next(s for s in steps_for("media", 1) if s.service == "play_media")
+    assert play.require == ("media_content_id",)
+    assert not step_should_fire(play, {"media_content_id": ""})
+    assert step_should_fire(play, {"media_content_id": "radio:x"})
 
 
 def test_single_service_state_is_one_step():

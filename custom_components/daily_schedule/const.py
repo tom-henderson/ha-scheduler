@@ -124,6 +124,13 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
         # and the user picked one) the fan mode. Steps whose required parameter is
         # empty are skipped (see step_should_fire), so set_fan_mode is only called
         # when a fan mode is chosen.
+        # Every setting the target entity supports is set on each change. This
+        # matters for IR-based integrations (e.g. SmartIR) where a single service
+        # call re-transmits the *entire* config as one encoded signal — leaving a
+        # setting unset would bake a stale value into the IR. So the mode, fan
+        # and swing selects are all seeded from the entity and always applied
+        # when it exposes them; the mode is folded into set_temperature to save
+        # one transmission.
         "param_schema": [
             {
                 "key": "hvac_mode",
@@ -147,7 +154,14 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
                 "label": "Fan mode",
                 "kind": "select",
                 "options_attribute": "fan_modes",
-                "optional": True,  # skipped when the entity has no fan modes
+                "optional": True,  # hidden when the entity has no fan modes
+            },
+            {
+                "key": "swing_mode",
+                "label": "Swing",
+                "kind": "select",
+                "options_attribute": "swing_modes",
+                "optional": True,  # hidden when the entity has no swing modes
             },
         ],
         "states": [
@@ -157,18 +171,18 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
                 "label": "On",
                 "sequence": [
                     {
-                        "service": "climate.set_hvac_mode",
-                        "data": {"hvac_mode": ""},
-                        "require": ["hvac_mode"],
-                    },
-                    {
                         "service": "climate.set_temperature",
-                        "data": {"temperature": 20},
+                        "data": {"hvac_mode": "", "temperature": 20},
                     },
                     {
                         "service": "climate.set_fan_mode",
                         "data": {"fan_mode": ""},
                         "require": ["fan_mode"],
+                    },
+                    {
+                        "service": "climate.set_swing_mode",
+                        "data": {"swing_mode": ""},
+                        "require": ["swing_mode"],
                     },
                 ],
             },
@@ -216,6 +230,7 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
                             "media_content_id": "",
                             "media_content_type": "music",
                         },
+                        "require": ["media_content_id"],
                     },
                 ],
             },
@@ -334,3 +349,9 @@ def step_should_fire(step: Step, data: dict[str, Any]) -> bool:
     chosen a value or the entity doesn't support it.
     """
     return all(data.get(key) not in (None, "") for key in step.require)
+
+
+def prune_empty(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop empty ("" / None) values so we never send a blank optional field
+    (e.g. `set_temperature` without a chosen `hvac_mode`)."""
+    return {key: value for key, value in data.items() if value not in (None, "")}
