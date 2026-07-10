@@ -17,14 +17,15 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.util import dt as dt_util
 
-from .const import apply_params, steps_for
+from .const import apply_params, is_stateless, steps_for
 from .logic import (
     ChangePoint,
     cell_at,
     daily_changepoints,
     jittered_segments,
+    jittered_trigger_at,
 )
-from .models import Bar
+from .models import Bar, Trigger
 
 if TYPE_CHECKING:
     from .manager import ScheduleManager
@@ -65,6 +66,7 @@ class ScheduleEngine:
         if not self._schedule.enabled:
             return
         self._schedule_boundaries()
+        self._schedule_triggers()
         if sync:
             await self.async_sync_now()
 
@@ -82,7 +84,7 @@ class ScheduleEngine:
         """Roll jitter for the day and cache the resulting plan per enabled bar."""
         self._plans = {}
         for bar in self._schedule.bars:
-            if not bar.enabled:
+            if not bar.enabled or is_stateless(bar.type):
                 continue
             intervals = jittered_segments(bar, self._rng)
             self._plans[bar.id] = daily_changepoints(bar, intervals)
@@ -106,6 +108,33 @@ class ScheduleEngine:
                     )
                 )
 
+    def _schedule_triggers(self) -> None:
+        """Schedule a one-shot for each future trigger on a stateless bar.
+
+        Unlike range bars there is no startup sync — a momentary trigger whose
+        time has already passed today does not fire retroactively; only the
+        remaining triggers for the day are scheduled. Jitter is rolled here,
+        once per rebuild.
+        """
+        now = dt_util.now()
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        for bar in self._schedule.bars:
+            if not bar.enabled or not is_stateless(bar.type):
+                continue
+            for trigger in bar.sorted_triggers():
+                if not trigger.action:
+                    continue
+                when = day_start + timedelta(
+                    hours=jittered_trigger_at(trigger, self._rng)
+                )
+                if when <= now:
+                    continue
+                self._boundary_unsubs.append(
+                    async_track_point_in_time(
+                        self.hass, self._make_trigger_cb(bar, trigger), when
+                    )
+                )
+
     def _cancel_boundaries(self) -> None:
         for unsub in self._boundary_unsubs:
             unsub()
@@ -122,13 +151,23 @@ class ScheduleEngine:
 
         return _fire
 
+    def _make_trigger_cb(self, bar: Bar, trigger: Trigger):
+        @callback
+        def _fire(_now: datetime) -> None:
+            if not self._schedule.enabled or not bar.enabled:
+                return
+            self.hass.async_create_task(self._fire_action(bar, trigger))
+
+        return _fire
+
     async def async_sync_now(self) -> None:
         """Set every live bar's targets to the state effective right now (§4.2/4.3)."""
         if not self._schedule.enabled:
             return
         now_hour = _now_hour()
         for bar in self._schedule.bars:
-            if not bar.enabled:
+            # Stateless bars fire momentary triggers; there is no state to sync.
+            if not bar.enabled or is_stateless(bar.type):
                 continue
             plan = self._plans.get(bar.id)
             if not plan:
@@ -159,6 +198,23 @@ class ScheduleEngine:
                     service,
                     bar.targets,
                 )
+
+    async def _fire_action(self, bar: Bar, trigger: Trigger) -> None:
+        """Fire a stateless trigger's action (e.g. scene.turn_on scene.wake)."""
+        action = trigger.action
+        service = action.get("service")
+        entity_id = action.get("entity_id")
+        if not service or not entity_id:
+            return
+        domain, service_name = service.split(".", 1)
+        try:
+            await self.hass.services.async_call(
+                domain, service_name, {"entity_id": entity_id}, blocking=False
+            )
+        except Exception:  # noqa: BLE001 - never let one bar break the schedule
+            _LOGGER.exception(
+                "Daily Schedule: failed to fire %s for %s", service, entity_id
+            )
 
     # -- daily rebuild -----------------------------------------------------
 

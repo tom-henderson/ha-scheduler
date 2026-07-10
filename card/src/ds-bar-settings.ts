@@ -1,4 +1,4 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import { TYPE_DOMAINS } from "./const";
@@ -65,16 +65,18 @@ export class DsBarSettings extends LitElement {
           ></ha-textfield>
         </div>
 
-        <div class="block">
-          <div class="field-label">Target entities</div>
-          <ha-selector
-            .hass=${this.hass}
-            .selector=${selector}
-            .value=${this._targets}
-            @value-changed=${(e: CustomEvent<{ value: string[] }>) =>
-              (this._targets = e.detail.value)}
-          ></ha-selector>
-        </div>
+        ${domains.length
+          ? html`<div class="block">
+              <div class="field-label">Target entities</div>
+              <ha-selector
+                .hass=${this.hass}
+                .selector=${selector}
+                .value=${this._targets}
+                @value-changed=${(e: CustomEvent<{ value: string[] }>) =>
+                  (this._targets = e.detail.value)}
+              ></ha-selector>
+            </div>`
+          : nothing}
 
         <div style="display:flex;gap:8px">
           <button class="btn primary" @click=${this._save}>

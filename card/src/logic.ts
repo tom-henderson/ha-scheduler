@@ -1,5 +1,5 @@
 import { HOURS, JITTERS, SNAP, MIN_SEGMENT, typeColor } from "./const";
-import type { Bar, Segment, TypeParam, TypeRegistry } from "./types";
+import type { Bar, Segment, Trigger, TypeParam, TypeRegistry } from "./types";
 
 /** Format hours (0-24) as HH:MM. */
 export function fmt(h: number): string {
@@ -34,12 +34,12 @@ export function isActive(types: TypeRegistry, type: string, stateIndex: number):
 }
 
 export function stateLabel(types: TypeRegistry, type: string, stateIndex: number): string {
-  return types[type]?.states[stateIndex]?.label ?? String(stateIndex);
+  return types[type]?.states?.[stateIndex]?.label ?? String(stateIndex);
 }
 
 /** Accent for a state: its own `color` if set (e.g. climate modes), else the type's. */
 export function stateColor(types: TypeRegistry, type: string, stateIndex: number): string {
-  return types[type]?.states[stateIndex]?.color ?? typeColor(type);
+  return types[type]?.states?.[stateIndex]?.color ?? typeColor(type);
 }
 
 /** The param schema for a type, or an empty list. */
@@ -65,7 +65,7 @@ export function paramValue(
 ): unknown {
   const fromSeg = seg.data?.[param.key];
   if (fromSeg !== undefined) return fromSeg;
-  const fromState = types[type]?.states[stateIndex]?.data?.[param.key];
+  const fromState = types[type]?.states?.[stateIndex]?.data?.[param.key];
   if (fromState !== undefined) return fromState;
   return param.default;
 }
@@ -98,6 +98,30 @@ export function jitterLabel(v: number): string {
 
 export function sortedSegments(bar: Bar): Segment[] {
   return [...bar.segments].sort((a, b) => a.start - b.start);
+}
+
+/** True for trigger-point bar types (no base/state ranges). */
+export function isStateless(types: TypeRegistry, type: string): boolean {
+  return types[type]?.kind === "stateless";
+}
+
+export function sortedTriggers(bar: Bar): Trigger[] {
+  return [...(bar.triggers ?? [])].sort((a, b) => a.at - b.at);
+}
+
+/** A sensible time for a new trigger: the middle of the day's largest gap. */
+export function nextTriggerTime(bar: Bar): number {
+  const pts = [0, ...sortedTriggers(bar).map((t) => t.at), HOURS];
+  let best = 0;
+  let mid = HOURS / 2;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const gap = pts[i + 1] - pts[i];
+    if (gap > best) {
+      best = gap;
+      mid = (pts[i] + pts[i + 1]) / 2;
+    }
+  }
+  return snap(mid);
 }
 
 /**

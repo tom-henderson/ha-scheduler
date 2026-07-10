@@ -49,6 +49,20 @@ volume, then play), and that `targets` may list several players — a speaker
 group needs no special handling. Each step only receives the parameters it
 declares, so a segment's volume never leaks into `play_media`.
 
+### Stateless triggers
+
+| Type      | Shape          | Fires                                         |
+| --------- | -------------- | --------------------------------------------- |
+| `trigger` | Trigger points | `scene.turn_on` / `script.turn_on` / `automation.trigger` |
+
+A `trigger` bar has no base or on/off ranges. Instead you drop **trigger points**
+on the timeline and drag them around; each fires an automation, scene or script
+at its time (with optional jitter). Because a stateless bar holds no state, it
+takes no startup sync — a point whose time already passed today does not fire
+retroactively — and it is excluded from conflict detection. A type is stateless
+when its registry entry sets `kind: "stateless"`; the card then renders pins
+instead of a track, and the engine schedules a one-shot per point.
+
 The mapping is data-driven (`custom_components/daily_schedule/const.py`), so new
 device families can be added without touching the engine or the card.
 

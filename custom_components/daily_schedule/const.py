@@ -200,6 +200,27 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
             },
         ],
     },
+    # A stateless bar: instead of a base + state ranges, it holds trigger points
+    # placed on the timeline, each firing an automation, scene or script at its
+    # time. It has no on/off state to hold, so it takes no `states` and is
+    # excluded from conflict detection. `kind: "stateless"` tells the card to
+    # render draggable pins and the engine to fire one-shots (see is_stateless).
+    "trigger": {
+        "label": "Automation trigger",
+        "icon": "mdi:map-marker-radius",
+        "kind": "stateless",
+        "color": "#cfe84a",
+        "actions": [
+            {"key": "scene", "label": "Scene", "domain": "scene", "service": "scene.turn_on"},
+            {"key": "script", "label": "Script", "domain": "script", "service": "script.turn_on"},
+            {
+                "key": "automation",
+                "label": "Automation",
+                "domain": "automation",
+                "service": "automation.trigger",
+            },
+        ],
+    },
 }
 
 DEFAULT_TYPE: Final = "light"
@@ -211,18 +232,26 @@ def type_def(bar_type: str) -> TypeDef:
 
 
 def state_count(bar_type: str) -> int:
-    """Number of selectable states for a type."""
-    return len(type_def(bar_type)["states"])
+    """Number of selectable states for a type (0 for stateless types)."""
+    return len(type_def(bar_type).get("states", []))
 
 
 def clamp_state_index(bar_type: str, index: int) -> int:
     """Clamp a state index into the valid range for the type."""
-    return max(0, min(state_count(bar_type) - 1, index))
+    count = state_count(bar_type)
+    if count == 0:  # stateless type — no states to index
+        return 0
+    return max(0, min(count - 1, index))
 
 
 def is_active(bar_type: str, state_index: int) -> bool:
     """A state is "active" when it is not the off/rest state (index 0)."""
     return clamp_state_index(bar_type, state_index) != OFF_STATE
+
+
+def is_stateless(bar_type: str) -> bool:
+    """A stateless type fires trigger points instead of holding a state range."""
+    return type_def(bar_type).get("kind") == "stateless"
 
 
 def steps_for(bar_type: str, state_index: int) -> list[tuple[str, str, dict[str, Any]]]:

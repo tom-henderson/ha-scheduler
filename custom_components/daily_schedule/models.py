@@ -72,8 +72,37 @@ class Segment:
 
 
 @dataclass
+class Trigger:
+    """A moment on a stateless bar that fires an action (scene/script/etc.)."""
+
+    at: float  # hours past midnight, snapped
+    action: dict[str, Any] = field(default_factory=dict)  # {"service", "entity_id"}
+    jitter: float = 0.0
+    id: str = field(default_factory=lambda: _uid("trg"))
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Trigger":
+        action = data.get("action")
+        return cls(
+            id=str(data.get("id") or _uid("trg")),
+            at=snap(data.get("at", 12)),
+            action=dict(action) if isinstance(action, dict) else {},
+            jitter=max(0.0, float(data.get("jitter", 0.0))),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "at": self.at,
+            "action": dict(self.action),
+            "jitter": self.jitter,
+        }
+
+
+@dataclass
 class Bar:
-    """One device timeline: a base state plus zero or more segment overrides."""
+    """One timeline: a base state + segment overrides (range), or trigger points
+    (stateless — see the bar type's `kind`)."""
 
     name: str
     type: str
@@ -81,6 +110,7 @@ class Bar:
     base: int = OFF_STATE
     enabled: bool = True
     segments: list[Segment] = field(default_factory=list)
+    triggers: list[Trigger] = field(default_factory=list)
     id: str = field(default_factory=lambda: _uid("bar"))
 
     @classmethod
@@ -90,6 +120,8 @@ class Bar:
             Segment.from_dict(s, bar_type) for s in data.get("segments", [])
         ]
         segments.sort(key=lambda s: s.start)
+        triggers = [Trigger.from_dict(t) for t in data.get("triggers", [])]
+        triggers.sort(key=lambda t: t.at)
         return cls(
             id=str(data.get("id") or _uid("bar")),
             name=str(data.get("name", "New schedule")),
@@ -98,6 +130,7 @@ class Bar:
             base=clamp_state_index(bar_type, int(data.get("base", OFF_STATE))),
             enabled=bool(data.get("enabled", True)),
             segments=segments,
+            triggers=triggers,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,10 +142,14 @@ class Bar:
             "base": self.base,
             "enabled": self.enabled,
             "segments": [s.to_dict() for s in self.sorted_segments()],
+            "triggers": [t.to_dict() for t in self.sorted_triggers()],
         }
 
     def sorted_segments(self) -> list[Segment]:
         return sorted(self.segments, key=lambda s: s.start)
+
+    def sorted_triggers(self) -> list[Trigger]:
+        return sorted(self.triggers, key=lambda t: t.at)
 
     def resolve(self, hour: float) -> int:
         """Effective state index at a time: covering segment else base."""

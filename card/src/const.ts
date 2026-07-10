@@ -26,6 +26,7 @@ export const TYPE_COLORS: Record<string, string> = {
   switch: "#a78bfa",
   climate: "#ff7a66",
   media: "#e879c9",
+  trigger: "#cfe84a",
 };
 
 /** Entity domains offered in the target picker for each device type. */

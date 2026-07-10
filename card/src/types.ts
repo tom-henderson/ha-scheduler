@@ -10,6 +10,19 @@ export interface Segment {
   data?: Record<string, unknown>;
 }
 
+export interface TriggerAction {
+  service?: string;
+  entity_id?: string;
+}
+
+/** A moment on a stateless bar that fires an action (scene/script/automation). */
+export interface Trigger {
+  id: string;
+  at: number; // hours past midnight
+  action: TriggerAction;
+  jitter: number;
+}
+
 export interface Bar {
   id: string;
   name: string;
@@ -18,6 +31,8 @@ export interface Bar {
   base: number;
   enabled: boolean;
   segments: Segment[];
+  /** Trigger points, for stateless bar types. */
+  triggers?: Trigger[];
 }
 
 export interface Schedule {
@@ -53,12 +68,26 @@ export interface TypeParam {
   keys?: string[];
 }
 
+/** A selectable action for a stateless (trigger) type. */
+export interface TypeAction {
+  key: string;
+  label: string;
+  domain: string;
+  service: string;
+}
+
 export interface TypeDef {
   label: string;
   icon: string;
-  states: TypeState[];
+  states?: TypeState[];
   /** Params editable per segment for this type's active states. */
   param_schema?: TypeParam[];
+  /** "stateless" for trigger-point bars; absent/"range" for state bars. */
+  kind?: string;
+  /** Semantic accent for the type (may override the card's palette). */
+  color?: string;
+  /** Selectable actions for a stateless type. */
+  actions?: TypeAction[];
 }
 
 export type TypeRegistry = Record<string, TypeDef>;
