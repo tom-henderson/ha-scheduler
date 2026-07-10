@@ -64,6 +64,14 @@ export interface TypeParam {
   default?: number | string;
   // select
   options?: { value: string; label: string }[];
+  /** Read select options from this attribute of the target entity (e.g.
+   * "hvac_modes" / "fan_modes") instead of a fixed `options` list. */
+  options_attribute?: string;
+  /** Option values to drop (e.g. climate's "off", which is the Off state). */
+  exclude?: string[];
+  /** An optional param may be left unset; the editor hides it when the target
+   * exposes no options for it. */
+  optional?: boolean;
   /** Data keys this param owns; defaults to [key]. Media writes several. */
   keys?: string[];
 }

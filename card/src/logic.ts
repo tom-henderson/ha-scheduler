@@ -1,5 +1,12 @@
-import { HOURS, JITTERS, SNAP, MIN_SEGMENT, typeColor } from "./const";
-import type { Bar, Segment, Trigger, TypeParam, TypeRegistry } from "./types";
+import { HOURS, JITTERS, SNAP, MIN_SEGMENT, HVAC_MODE_COLORS, typeColor } from "./const";
+import type {
+  Bar,
+  HomeAssistant,
+  Segment,
+  Trigger,
+  TypeParam,
+  TypeRegistry,
+} from "./types";
 
 /** Format hours (0-24) as HH:MM. */
 export function fmt(h: number): string {
@@ -40,6 +47,54 @@ export function stateLabel(types: TypeRegistry, type: string, stateIndex: number
 /** Accent for a state: its own `color` if set (e.g. climate modes), else the type's. */
 export function stateColor(types: TypeRegistry, type: string, stateIndex: number): string {
   return types[type]?.states?.[stateIndex]?.color ?? typeColor(type);
+}
+
+/** Prettify a mode value for display, e.g. "heat_cool" -> "Auto". */
+const MODE_LABELS: Record<string, string> = {
+  heat_cool: "Auto",
+  fan_only: "Fan only",
+};
+export function prettyMode(v: string): string {
+  return (
+    MODE_LABELS[v] ??
+    v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+/**
+ * Options for a select param. Static `options` win; otherwise they are read
+ * from the target entities' `options_attribute` (e.g. `hvac_modes`), using the
+ * intersection across all targets so a multi-target bar only offers modes every
+ * device supports. `exclude` drops values (e.g. "off").
+ */
+export function paramOptions(
+  hass: HomeAssistant | undefined,
+  entities: string[],
+  param: TypeParam
+): { value: string; label: string }[] {
+  if (param.options) return param.options;
+  const attr = param.options_attribute;
+  if (!attr || !hass) return [];
+  const lists = entities
+    .map((e) => hass.states?.[e]?.attributes?.[attr])
+    .filter((l): l is string[] => Array.isArray(l));
+  if (!lists.length) return [];
+  let common = lists[0];
+  for (const l of lists.slice(1)) common = common.filter((v) => l.includes(v));
+  const excl = new Set(param.exclude ?? []);
+  return common
+    .filter((v) => !excl.has(v))
+    .map((v) => ({ value: v, label: prettyMode(v) }));
+}
+
+/**
+ * Segment accent: for a mode-bearing type (climate) colour by the chosen
+ * `hvac_mode`, else fall back to the state colour.
+ */
+export function segmentColor(types: TypeRegistry, type: string, seg: Segment): string {
+  const mode = seg.data?.hvac_mode;
+  if (typeof mode === "string" && HVAC_MODE_COLORS[mode]) return HVAC_MODE_COLORS[mode];
+  return stateColor(types, type, seg.state);
 }
 
 /** The param schema for a type, or an empty list. */
@@ -86,6 +141,7 @@ export function paramSummary(
       if (v === undefined || v === null || v === "") return "";
       if (p.kind === "slider") return `${Math.round(Number(v) * 100)}%`;
       if (p.kind === "number") return `${v}${p.unit ?? ""}`;
+      if (p.kind === "select") return prettyMode(String(v));
       return String(v);
     })
     .filter(Boolean)
