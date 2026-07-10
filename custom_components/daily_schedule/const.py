@@ -94,6 +94,19 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
             },
         ],
     },
+    # A generic helper toggle: a `switch` or `input_boolean` flipped on a
+    # schedule, typically to trigger other automations. Same two-state shape as
+    # the others, so it is a pure registry addition. Uses the domain-agnostic
+    # `homeassistant.turn_on/off` so a single bar can drive `switch` and
+    # `input_boolean` targets alike.
+    "switch": {
+        "label": "Switch",
+        "icon": "mdi:toggle-switch",
+        "states": [
+            {"key": "off", "label": "Off", "service": "homeassistant.turn_off"},
+            {"key": "on", "label": "On", "service": "homeassistant.turn_on"},
+        ],
+    },
 }
 
 DEFAULT_TYPE: Final = "light"

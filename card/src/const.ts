@@ -23,6 +23,7 @@ export const TYPE_COLORS: Record<string, string> = {
   blind: "#7e9cff",
   water: "#2bc4d4",
   fan: "#5ad19a",
+  switch: "#a78bfa",
 };
 
 /** Entity domains offered in the target picker for each device type. */
@@ -31,6 +32,7 @@ export const TYPE_DOMAINS: Record<string, string[]> = {
   blind: ["cover"],
   water: ["switch", "valve"],
   fan: ["fan"],
+  switch: ["switch", "input_boolean"],
 };
 
 export const DEFAULT_TYPE_COLOR = "var(--primary-color)";
