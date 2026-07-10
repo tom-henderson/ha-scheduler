@@ -100,6 +100,26 @@ def test_segments_always_serialize_sorted():
     assert starts == sorted(starts)
 
 
+def test_segment_data_defaults_empty_and_roundtrips():
+    # Simple types carry no per-segment data.
+    seg = Segment.from_dict({"start": 1, "end": 2, "state": 1}, "light")
+    assert seg.data == {}
+    assert seg.to_dict()["data"] == {}
+
+    # Richer types persist their parameters unchanged through a roundtrip.
+    climate = Segment.from_dict(
+        {"start": 6, "end": 9, "state": 1, "data": {"temperature": 21.5}}, "climate"
+    )
+    assert climate.data == {"temperature": 21.5}
+    reparsed = Segment.from_dict(climate.to_dict(), "climate")
+    assert reparsed.data == {"temperature": 21.5}
+
+
+def test_segment_data_ignores_non_dict():
+    seg = Segment.from_dict({"start": 1, "end": 2, "state": 1, "data": "nope"}, "climate")
+    assert seg.data == {}
+
+
 def test_active_intervals_excludes_off_state():
     bar = Bar.from_dict(
         {

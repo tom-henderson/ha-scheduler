@@ -6,6 +6,8 @@ export interface Segment {
   end: number;
   state: number; // index into the type's state list
   jitter: number; // hours; 0 = none
+  /** Per-segment service params for richer types (e.g. climate temperature). */
+  data?: Record<string, unknown>;
 }
 
 export interface Bar {
@@ -30,12 +32,31 @@ export interface TypeState {
   label: string;
   service: string;
   data?: Record<string, unknown>;
+  /** Optional per-state accent (e.g. climate mode colours). */
+  color?: string;
+}
+
+/** A user-editable parameter for a segment's active state (see `param_schema`). */
+export interface TypeParam {
+  key: string;
+  label: string;
+  kind: "number" | "select";
+  // number
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  default?: number | string;
+  // select
+  options?: { value: string; label: string }[];
 }
 
 export interface TypeDef {
   label: string;
   icon: string;
   states: TypeState[];
+  /** Params editable per segment for this type's active states. */
+  param_schema?: TypeParam[];
 }
 
 export type TypeRegistry = Record<string, TypeDef>;

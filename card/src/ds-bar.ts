@@ -9,7 +9,9 @@ import {
   isActive,
   jitterLabel,
   largestGap,
+  paramSummary,
   sortedSegments,
+  stateColor,
   stateLabel,
 } from "./logic";
 import "./ds-bar-settings";
@@ -261,14 +263,19 @@ export class DsBar extends LitElement {
     const left = (s.start / HOURS) * 100;
     const width = ((s.end - s.start) / HOURS) * 100;
     const label = stateLabel(this.types, this.bar.type, s.state);
+    const summary = active ? paramSummary(this.types, this.bar.type, s) : "";
+    const color = active ? stateColor(this.types, this.bar.type, s.state) : "";
     const dragging = this._drag?.id === s.id;
     const showStart = dragging && (this._drag!.mode === "move" || this._drag!.mode === "l");
     const showEnd = dragging && (this._drag!.mode === "move" || this._drag!.mode === "r");
+    const title = `${fmt(s.start)}–${fmt(s.end)} · ${label}${
+      summary ? ` ${summary}` : ""
+    }${s.jitter ? ` · ${jitterLabel(s.jitter)}` : ""}`;
     return html`
       <div
         class=${`seg ${active ? "active" : "inactive"} ${dragging ? "dragging" : ""}`}
-        style=${`left:${left}%;width:${width}%`}
-        title=${`${fmt(s.start)}–${fmt(s.end)} · ${label}${s.jitter ? ` · ${jitterLabel(s.jitter)}` : ""}`}
+        style=${`left:${left}%;width:${width}%${color ? `;--accent:${color}` : ""}`}
+        title=${title}
         @pointerdown=${(e: PointerEvent) => this._dragSeg(s, "move", e)}
         @click=${(e: Event) => {
           e.stopPropagation();
@@ -280,7 +287,9 @@ export class DsBar extends LitElement {
         </div>
         ${width > 8
           ? html`<span class="seg-label"
-              >${label}${s.jitter
+              >${label}${summary
+                ? html`<span class="seg-sub">${summary}</span>`
+                : nothing}${s.jitter
                 ? html`<ha-icon icon="mdi:dice-5" style="--mdc-icon-size:12px"></ha-icon>`
                 : nothing}</span
             >`
@@ -435,6 +444,11 @@ function barStyles() {
     }
     .seg.inactive .seg-label {
       color: var(--ds-dim);
+    }
+    .seg-sub {
+      font-weight: 600;
+      opacity: 0.72;
+      font-variant-numeric: tabular-nums;
     }
     .handle {
       position: absolute;

@@ -28,13 +28,21 @@ visual, drag-driven card. No YAML required for the common case.
 
 ## Supported device types
 
-| Type     | States                    | Services used                                    |
-| -------- | ------------------------- | ------------------------------------------------ |
-| `light`  | Off / On                  | `light.turn_off` / `light.turn_on`               |
-| `blind`  | Closed / Open             | `cover.close_cover` / `cover.open_cover`         |
-| `water`  | Off / Watering            | `switch.turn_off` / `switch.turn_on`             |
-| `fan`    | Off / Low / Med / High    | `fan.turn_off` / `fan.set_percentage`            |
-| `switch` | Off / On                  | `homeassistant.turn_off` / `homeassistant.turn_on` |
+| Type      | States                       | Services used                                    |
+| --------- | ---------------------------- | ------------------------------------------------ |
+| `light`   | Off / On                     | `light.turn_off` / `light.turn_on`               |
+| `blind`   | Closed / Open                | `cover.close_cover` / `cover.open_cover`         |
+| `water`   | Off / Watering               | `switch.turn_off` / `switch.turn_on`             |
+| `fan`     | Off / Low / Med / High       | `fan.turn_off` / `fan.set_percentage`            |
+| `switch`  | Off / On                     | `homeassistant.turn_off` / `homeassistant.turn_on` |
+| `climate` | Off / Heat / Cool / Auto     | `climate.turn_off` / `climate.set_temperature`   |
+
+`climate` is the first type whose active states carry a **per-segment
+parameter** — the target temperature, edited with a stepper in the segment
+popover and stored on the segment. The HVAC mode is the state itself (so each
+segment is coloured by mode), and a type may declare such parameters via
+`param_schema` in the registry; the engine merges a segment's saved values over
+the state's defaults when it fires the service call.
 
 The mapping is data-driven (`custom_components/daily_schedule/const.py`), so new
 device families can be added without touching the engine or the card.

@@ -2,9 +2,9 @@ import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
 import { JITTERS } from "./const";
-import { fmt, parse } from "./logic";
+import { fmt, isActive, paramSchema, paramValue, parse } from "./logic";
 import { sharedStyles } from "./styles";
-import type { Segment, TypeRegistry } from "./types";
+import type { Segment, TypeParam, TypeRegistry } from "./types";
 
 /**
  * Popover to edit a segment's state, start/end times and jitter. Emits
@@ -68,6 +68,38 @@ export class DsSegmentEditor extends LitElement {
         display: flex;
         gap: 8px;
       }
+      .stepper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .stepper button {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        border: 1px solid var(--ds-line);
+        background: var(--ds-track-bg);
+        color: var(--ds-text);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        font-family: inherit;
+      }
+      .stepper button:hover:not([disabled]) {
+        border-color: var(--accent, var(--ds-accent));
+      }
+      .stepper button[disabled] {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .stepper .val {
+        flex: 1;
+        text-align: center;
+        font-size: 16px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        color: var(--ds-text);
+      }
     `,
   ];
 
@@ -82,6 +114,7 @@ export class DsSegmentEditor extends LitElement {
   @state() private _end = "";
   @state() private _jit = 0;
   @state() private _err = "";
+  @state() private _data: Record<string, unknown> = {};
 
   override willUpdate(changed: Map<string, unknown>): void {
     if (changed.has("segment")) {
@@ -89,8 +122,34 @@ export class DsSegmentEditor extends LitElement {
       this._start = fmt(this.segment.start);
       this._end = fmt(this.segment.end);
       this._jit = this.segment.jitter ?? 0;
+      this._data = { ...(this.segment.data ?? {}) };
       this._err = "";
     }
+  }
+
+  private get _params(): TypeParam[] {
+    // Params only apply to active states (the off/rest state takes none).
+    return isActive(this.types, this.type, this._si)
+      ? paramSchema(this.types, this.type)
+      : [];
+  }
+
+  private _setParam(key: string, value: unknown): void {
+    this._data = { ...this._data, [key]: value };
+  }
+
+  private _paramNumber(p: TypeParam): number {
+    const v = paramValue(this.types, this.type, this._si, { data: this._data }, p);
+    return typeof v === "number" ? v : Number(v ?? p.default ?? 0);
+  }
+
+  private _step(p: TypeParam, dir: 1 | -1): void {
+    const step = p.step ?? 1;
+    let v = this._paramNumber(p) + dir * step;
+    if (p.min !== undefined) v = Math.max(p.min, v);
+    if (p.max !== undefined) v = Math.min(p.max, v);
+    v = Math.round(v / step) * step;
+    this._setParam(p.key, Math.round(v * 1e4) / 1e4);
   }
 
   private _save(): void {
@@ -100,9 +159,14 @@ export class DsSegmentEditor extends LitElement {
     if (pe <= ps) return this._fail("End must be after start");
     if (ps < this.bounds.min || pe > this.bounds.max)
       return this._fail(`Stay within ${fmt(this.bounds.min)}–${fmt(this.bounds.max)}`);
+    // Persist only the params that apply to the chosen state; an off segment
+    // carries none.
+    const keep = new Set(this._params.map((p) => p.key));
+    const data: Record<string, unknown> = {};
+    for (const k of keep) if (this._data[k] !== undefined) data[k] = this._data[k];
     this.dispatchEvent(
       new CustomEvent("segment-save", {
-        detail: { ...this.segment, state: this._si, start: ps, end: pe, jitter: this._jit },
+        detail: { ...this.segment, state: this._si, start: ps, end: pe, jitter: this._jit, data },
       })
     );
   }
@@ -124,12 +188,18 @@ export class DsSegmentEditor extends LitElement {
         <div class="state-buttons" style=${`--accent:${this.accent}`}>
           ${states.map(
             (st, i) => html`
-              <button class=${i === this._si ? "sel" : ""} @click=${() => (this._si = i)}>
+              <button
+                class=${i === this._si ? "sel" : ""}
+                style=${st.color && i === this._si ? `--accent:${st.color}` : ""}
+                @click=${() => (this._si = i)}
+              >
                 ${st.label}
               </button>
             `
           )}
         </div>
+
+        ${this._params.map((p) => this._renderParam(p))}
 
         <div class="row">
           <div>
@@ -184,6 +254,51 @@ export class DsSegmentEditor extends LitElement {
             <ha-icon icon="mdi:check" style="--mdc-icon-size:16px"></ha-icon> Save
           </button>
         </div>
+      </div>
+    `;
+  }
+
+  private _renderParam(p: TypeParam) {
+    if (p.kind === "select") {
+      const cur = String(paramValue(this.types, this.type, this._si, { data: this._data }, p) ?? "");
+      return html`
+        <div class="field-label" style="margin-top:12px">${p.label}</div>
+        <div class="state-buttons" style=${`--accent:${this.accent}`}>
+          ${(p.options ?? []).map(
+            (o) => html`
+              <button
+                class=${o.value === cur ? "sel" : ""}
+                @click=${() => this._setParam(p.key, o.value)}
+              >
+                ${o.label}
+              </button>
+            `
+          )}
+        </div>
+      `;
+    }
+    // number
+    const val = this._paramNumber(p);
+    const step = p.step ?? 1;
+    const dp = step < 1 ? 1 : 0;
+    return html`
+      <div class="field-label" style="margin-top:12px">${p.label}</div>
+      <div class="stepper" style=${`--accent:${this.accent}`}>
+        <button
+          @click=${() => this._step(p, -1)}
+          ?disabled=${p.min !== undefined && val <= p.min}
+          aria-label=${`Decrease ${p.label}`}
+        >
+          <ha-icon icon="mdi:minus" style="--mdc-icon-size:16px"></ha-icon>
+        </button>
+        <span class="val">${val.toFixed(dp)}${p.unit ?? ""}</span>
+        <button
+          @click=${() => this._step(p, 1)}
+          ?disabled=${p.max !== undefined && val >= p.max}
+          aria-label=${`Increase ${p.label}`}
+        >
+          <ha-icon icon="mdi:plus" style="--mdc-icon-size:16px"></ha-icon>
+        </button>
       </div>
     `;
   }

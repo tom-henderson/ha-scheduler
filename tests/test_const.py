@@ -40,3 +40,30 @@ def test_switch_uses_domain_agnostic_turn_on_off():
     assert service_for("switch", 0) == ("homeassistant", "turn_off", {})
     assert service_for("switch", 1) == ("homeassistant", "turn_on", {})
     assert is_active("switch", 1)
+
+
+def test_climate_states_are_modes():
+    climate = TYPE_REGISTRY["climate"]
+    assert [s["key"] for s in climate["states"]] == ["off", "heat", "cool", "auto"]
+    # Off is index 0 / rest; the three modes are active.
+    assert not is_active("climate", 0)
+    for i in (1, 2, 3):
+        assert is_active("climate", i)
+
+
+def test_climate_declares_a_temperature_param():
+    schema = TYPE_REGISTRY["climate"]["param_schema"]
+    temp = next(p for p in schema if p["key"] == "temperature")
+    assert temp["kind"] == "number"
+    assert temp["min"] < temp["max"]
+
+
+def test_service_for_climate_carries_mode_and_default_temp():
+    # Each mode maps to set_temperature with its hvac_mode + a default temp; the
+    # engine later merges the segment's own temperature over this default.
+    domain, service, data = service_for("climate", 1)  # heat
+    assert (domain, service) == ("climate", "set_temperature")
+    assert data["hvac_mode"] == "heat"
+    assert "temperature" in data
+    # Off turns the unit off and takes no data.
+    assert service_for("climate", 0) == ("climate", "turn_off", {})

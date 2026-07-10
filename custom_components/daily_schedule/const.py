@@ -107,6 +107,52 @@ TYPE_REGISTRY: Final[dict[str, TypeDef]] = {
             {"key": "on", "label": "On", "service": "homeassistant.turn_on"},
         ],
     },
+    # Climate is the first type whose active states carry parameters. The HVAC
+    # mode is the *state* (so it reuses the existing state selector and colours
+    # each segment by mode); the target temperature is a per-segment parameter,
+    # declared in `param_schema` and stored on the segment's `data`. The engine
+    # merges that `data` over each state's registry defaults, so `set_temperature`
+    # receives both the mode and the segment's own temperature.
+    "climate": {
+        "label": "Climate",
+        "icon": "mdi:thermostat",
+        "param_schema": [
+            {
+                "key": "temperature",
+                "label": "Target temperature",
+                "kind": "number",
+                "min": 7,
+                "max": 35,
+                "step": 0.5,
+                "unit": "°",
+                "default": 20,
+            },
+        ],
+        "states": [
+            {"key": "off", "label": "Off", "service": "climate.turn_off"},
+            {
+                "key": "heat",
+                "label": "Heat",
+                "service": "climate.set_temperature",
+                "color": "#ff6b5a",
+                "data": {"hvac_mode": "heat", "temperature": 20},
+            },
+            {
+                "key": "cool",
+                "label": "Cool",
+                "service": "climate.set_temperature",
+                "color": "#4aa8ff",
+                "data": {"hvac_mode": "cool", "temperature": 24},
+            },
+            {
+                "key": "auto",
+                "label": "Auto",
+                "service": "climate.set_temperature",
+                "color": "#5ad19a",
+                "data": {"hvac_mode": "heat_cool", "temperature": 21},
+            },
+        ],
+    },
 }
 
 DEFAULT_TYPE: Final = "light"

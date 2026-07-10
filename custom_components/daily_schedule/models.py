@@ -38,6 +38,10 @@ class Segment:
     end: float
     state: int
     jitter: float = 0.0
+    # Per-segment service parameters for richer types (e.g. a climate segment's
+    # target temperature). Empty for the simple on/off types. Merged over the
+    # type's registry defaults when the engine fires the service call.
+    data: dict[str, Any] = field(default_factory=dict)
     id: str = field(default_factory=lambda: _uid("seg"))
 
     @classmethod
@@ -46,12 +50,14 @@ class Segment:
         end = snap(data.get("end", start + 1))
         if end <= start:
             end = min(HOURS_PER_DAY, start + SNAP)
+        raw = data.get("data")
         return cls(
             id=str(data.get("id") or _uid("seg")),
             start=start,
             end=end,
             state=clamp_state_index(bar_type, int(data.get("state", 1))),
             jitter=max(0.0, float(data.get("jitter", 0.0))),
+            data=dict(raw) if isinstance(raw, dict) else {},
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,6 +67,7 @@ class Segment:
             "end": self.end,
             "state": self.state,
             "jitter": self.jitter,
+            "data": dict(self.data),
         }
 
 
