@@ -413,6 +413,7 @@ function t(t,e,i,s){var n,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
         </div>
         <div class="stem"></div>
         <div class="knob"></div>
+        ${i?q`<div class="bubble pin-time">${xt(t.at)}</div>`:X}
       </div>
     `}_renderSegment(t){const e=kt(this.types,this.bar.type,t.state),i=t.start/gt*100,s=(t.end-t.start)/gt*100,n=e?(r=this.types,a=this.bar.type,o=t,zt(r,a).map(t=>{if("media"===t.kind){const t=o.data?.media_title??o.data?.media_content_id;return t?String(t):""}const e=jt(r,a,o.state,o,t);return null==e||""===e?"":"slider"===t.kind?`${Math.round(100*Number(e))}%`:"number"===t.kind?`${e}${t.unit??""}`:"select"===t.kind?St(String(e)):String(e)}).filter(Boolean).join(" · ")):"";var r,a,o;const d=n||Et(this.types,this.bar.type,t.state),c=e?Mt(this.types,this.bar.type,t):"",l=this._drag?.id===t.id,h=l&&("move"===this._drag.mode||"l"===this._drag.mode),p=l&&("move"===this._drag.mode||"r"===this._drag.mode),u=`${xt(t.start)}–${xt(t.end)} · ${d}${t.jitter?` · ${Ot(t.jitter)}`:""}`;return q`
       <div
@@ -729,6 +730,11 @@ function t(t,e,i,s){var n,r=arguments.length,a=r<3?e:null===s?s=Object.getOwnPro
     }
     .pin.dragging .flag {
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+    .pin .bubble.pin-time {
+      top: 50%;
+      left: 0;
+      transform: translate(-50%, -50%);
     }
     .flash {
       position: absolute;

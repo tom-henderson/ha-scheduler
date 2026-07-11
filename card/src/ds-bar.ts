@@ -422,6 +422,7 @@ export class DsBar extends LitElement {
         </div>
         <div class="stem"></div>
         <div class="knob"></div>
+        ${dragging ? html`<div class="bubble pin-time">${fmt(tr.at)}</div>` : nothing}
       </div>
     `;
   }
@@ -768,6 +769,11 @@ function barStyles() {
     }
     .pin.dragging .flag {
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+    .pin .bubble.pin-time {
+      top: 50%;
+      left: 0;
+      transform: translate(-50%, -50%);
     }
     .flash {
       position: absolute;
