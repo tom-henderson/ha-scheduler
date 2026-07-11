@@ -384,7 +384,25 @@ export class DsSegmentEditor extends LitElement {
   }
 
   private _renderMedia(p: TypeParam) {
+    // The media source is a property of the bar, not the segment. Bind HA's
+    // media selector to the bar's first target: passing it as the selector
+    // `context.filter_entity` hides the selector's own entity picker (issue
+    // #19) and lets "Pick media" browse that player, so its library actually
+    // shows up. Also seed `entity_id` in the value for older HA builds that
+    // don't yet honour `context`, so browsing still targets the bar's player.
+    // (`media_content_id` is portable across a bar's targets, so browsing one
+    // is enough — the engine plays the pick to every target.)
+    const entity = this.entities[0];
+    if (!entity) {
+      return html`
+        <div class="field-label" style="margin-top:12px">${p.label}</div>
+        <div class="hint" style="color:var(--ds-dim)">
+          Pick a target entity on the bar to choose media.
+        </div>
+      `;
+    }
     const value = {
+      entity_id: entity,
       media_content_id: this._data.media_content_id,
       media_content_type: this._data.media_content_type,
     };
@@ -393,6 +411,7 @@ export class DsSegmentEditor extends LitElement {
       <ha-selector
         .hass=${this.hass}
         .selector=${{ media: {} }}
+        .context=${{ filter_entity: entity }}
         .value=${value}
         @value-changed=${(e: CustomEvent<{ value: MediaValue }>) =>
           this._onMedia(e.detail.value)}
