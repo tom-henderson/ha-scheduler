@@ -100,6 +100,25 @@ class ScheduleManager:
         self.schedule.bars = [b for b in self.schedule.bars if b.id != bar_id]
         await self._async_persist_and_refresh(resync=True)
 
+    async def async_reorder_bars(self, order: list[str]) -> None:
+        """Reorder bars to match `order` (a list of bar ids).
+
+        Purely presentational — order does not affect the engine — so no resync.
+        Ids not present are ignored; any bars missing from `order` are kept in
+        their current relative order at the end, so the list is never lost.
+        """
+        by_id = {b.id: b for b in self.schedule.bars}
+        seen: set[str] = set()
+        reordered = []
+        for bar_id in order:
+            bar = by_id.get(bar_id)
+            if bar is not None and bar_id not in seen:
+                reordered.append(bar)
+                seen.add(bar_id)
+        reordered.extend(b for b in self.schedule.bars if b.id not in seen)
+        self.schedule.bars = reordered
+        await self._async_persist_and_refresh(resync=False)
+
     async def async_duplicate_bar(self, bar_id: str) -> Bar:
         src = self._require_bar(bar_id)
         clone = Bar.from_dict(

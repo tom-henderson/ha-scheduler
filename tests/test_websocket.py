@@ -105,6 +105,41 @@ async def test_subscribe_pushes_on_change(hass, hass_ws_client, setup):
     assert event["event"]["bars"][0]["name"] == "New"
 
 
+async def test_reorder_bars(hass, hass_ws_client, setup):
+    client = await hass_ws_client(hass)
+    ids = []
+    for name in ("A", "B", "C"):
+        await client.send_json_auto_id(
+            {
+                "type": f"{DOMAIN}/add_bar",
+                "entry_id": setup.entry_id,
+                "bar": {"name": name, "type": "light", "targets": [], "segments": []},
+            }
+        )
+        ids.append((await client.receive_json())["result"]["bar_id"])
+
+    # Move the last bar (C) to the front.
+    await client.send_json_auto_id(
+        {
+            "type": f"{DOMAIN}/reorder_bars",
+            "entry_id": setup.entry_id,
+            "order": [ids[2], ids[0], ids[1]],
+        }
+    )
+    msg = await client.receive_json()
+    assert msg["success"]
+    assert [b["name"] for b in msg["result"]["bars"]] == ["C", "A", "B"]
+    # setup.runtime_data.schedule.bars holds Bar dataclasses, not dicts.
+    assert [b.id for b in setup.runtime_data.schedule.bars] == [ids[2], ids[0], ids[1]]
+
+    # A partial order keeps unmentioned bars at the end in their current order.
+    await client.send_json_auto_id(
+        {"type": f"{DOMAIN}/reorder_bars", "entry_id": setup.entry_id, "order": [ids[1]]}
+    )
+    msg = await client.receive_json()
+    assert [b["name"] for b in msg["result"]["bars"]] == ["B", "C", "A"]
+
+
 async def test_duplicate_bar(hass, hass_ws_client, setup):
     client = await hass_ws_client(hass)
     await client.send_json_auto_id(
