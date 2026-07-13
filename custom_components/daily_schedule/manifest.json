@@ -9,5 +9,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/tom-henderson/ha-scheduler/issues",
   "integration_type": "service",
-  "version": "0.7.0"
+  "version": "0.7.1"
 }
