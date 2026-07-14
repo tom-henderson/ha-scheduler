@@ -230,6 +230,31 @@ def test_disabled_bar_excluded_from_conflicts():
     assert detect_conflicts(sched) == {"a": [], "b": []}
 
 
+def test_no_conflict_when_day_masks_dont_intersect():
+    # Same entity, overlapping times, but one bar is weekdays and the other is
+    # weekend — they can never be active on the same day, so no conflict.
+    sched = _sched(
+        {"id": "a", "name": "Weekday", "type": "light", "targets": ["light.x"],
+         "days": [0, 1, 2, 3, 4], "segments": [{"start": 18, "end": 23, "state": 1}]},
+        {"id": "b", "name": "Weekend", "type": "light", "targets": ["light.x"],
+         "days": [5, 6], "segments": [{"start": 18, "end": 23, "state": 1}]},
+    )
+    assert detect_conflicts(sched) == {"a": [], "b": []}
+
+
+def test_conflict_when_day_masks_partially_intersect():
+    # Overlap on Friday (day 4) is enough to conflict.
+    sched = _sched(
+        {"id": "a", "name": "A", "type": "light", "targets": ["light.x"],
+         "days": [0, 1, 2, 3, 4], "segments": [{"start": 18, "end": 23, "state": 1}]},
+        {"id": "b", "name": "B", "type": "light", "targets": ["light.x"],
+         "days": [4, 5, 6], "segments": [{"start": 20, "end": 22, "state": 1}]},
+    )
+    conflicts = detect_conflicts(sched)
+    assert conflicts["a"] == ["B"]
+    assert conflicts["b"] == ["A"]
+
+
 def test_stateless_bars_are_excluded_from_conflicts():
     # Two trigger bars sharing a target at the same moment are not a conflict —
     # stateless bars hold no state.

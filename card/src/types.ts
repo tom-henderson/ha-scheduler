@@ -39,6 +39,8 @@ export interface Bar {
   targets: string[];
   base: number;
   enabled: boolean;
+  /** Weekdays the bar acts on (Monday=0 … Sunday=6). Absent = every day. */
+  days?: number[];
   segments: Segment[];
   /** Trigger points, for stateless bar types. */
   triggers?: Trigger[];

@@ -33,6 +33,7 @@ Bar
 ├─ type: string                       # entity domain family — drives available states (see §3)
 ├─ targets: string[]                  # one or more entity_ids (or area/room refs, see §9)
 ├─ base: int                          # index into the type's state list; fills all uncovered time
+├─ days: int[]                        # weekdays the bar acts on (Mon=0 … Sun=6); default all 7 (see §10)
 └─ segments: Segment[]
 
 Segment
@@ -169,7 +170,6 @@ These were explicitly **deferred**, not rejected — revisit for v1.1+:
 ## 10. Explicitly out of scope for v1
 - Level/percentage per-segment values.
 - Priority-based conflict resolution.
-- Multiple distinct day-types (e.g. weekday vs weekend) — v1 is a single repeating 24h schedule.
 - Inline editing of bar name/targets was not built in the mockup; implement with standard HA pickers in production.
 
 ### Implemented after v1
@@ -190,3 +190,4 @@ These were explicitly **deferred**, not rejected — revisit for v1.1+:
     resolved-for-today value (approximate across the year, but stable).
   - The general "run only while the sun is below the horizon" **condition**
     (independent of a boundary) is left to the conditions feature (#22).
+- **Multiple day-types (weekday vs weekend)** — issue #5. Implemented as a lightweight **per-bar `days` mask** (option 1): each `Bar` carries a weekday set (Monday=0 … Sunday=6, defaulting to every day). The engine resolves the day-type once per daily rebuild (and at startup) from `dt_util.now().weekday()` and skips bars excluded today; conflict detection ignores bar pairs whose masks never intersect. A weekday/weekend split is two bars on the same entity with complementary masks — no named day-plans. A bar with no `days` key migrates to "every day", so no store-version bump was needed.

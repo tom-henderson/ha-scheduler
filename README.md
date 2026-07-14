@@ -26,8 +26,13 @@ visual, drag-driven card. No YAML required for the common case.
   doesn't run that day — so "on at 7am **unless the sun is already up**" works.
 - **Jitter.** Randomise a segment's boundaries by ±5–30 min, re-rolled once per
   day and clamped so segments never reorder or overlap.
+- **Per-bar active days.** Each bar has a weekday mask (defaults to every day);
+  a bar simply doesn't act on excluded days. A weekday/weekend split is two
+  bars on the same entity with complementary masks. A summary badge
+  (Weekdays / Weekend / Mon Wed Fri) shows on any bar that isn't every-day.
 - **Conflict warnings.** If two enabled bars target the same entity with
-  overlapping active segments, both show a ⚠ Conflict chip.
+  overlapping active segments **on a shared weekday**, both show a ⚠ Conflict
+  chip. Bars whose day masks never intersect can't conflict.
 - **Per-schedule and per-bar enable** toggles, plus a `switch` entity and a
   `sync_now` service for automations.
 - **Themed** with Home Assistant CSS variables (light/dark aware).
@@ -120,7 +125,9 @@ With a single Daily Schedule set up, the card auto-selects it.
 - **Tap the base layer** (the fill behind the segments) to set the default
   state applied to all uncovered time.
 - **+** adds a segment in the largest free gap and opens its editor.
-- **⚙** edits the bar's name and target entities (standard HA entity picker).
+- **⚙** edits the bar's name, target entities (standard HA entity picker) and
+  **active days** — toggle individual weekdays or use the Every day / Weekdays /
+  Weekend presets.
 - **Drag the ⠿ grip** on the left of a bar's header up or down to **reorder**
   bars. Order is presentational only — it doesn't affect scheduling.
 - **Sync now** sets every entity to its current scheduled state on demand.
@@ -137,13 +144,15 @@ defines for the current time (the same sync performed at startup).
 ## How it works
 
 ```
-Schedule (enabled) ── bars[] ── Bar (name, type, targets, base, enabled)
+Schedule (enabled) ── bars[] ── Bar (name, type, targets, base, enabled, days)
                                      └── segments[] ── Segment (start, end, state, jitter)
 ```
 
 The state at any time is the covering segment's state, else the bar's `base`.
 The engine schedules a timer at each transition for the day, re-rolling jitter
-at midnight. A disabled schedule does nothing; a disabled bar is skipped.
+at midnight. A disabled schedule does nothing; a disabled bar is skipped, as is
+a bar whose `days` mask excludes today's weekday — the day-type is resolved once
+per daily rebuild (and at startup) from the local weekday.
 Conflicts are surfaced as warnings only — v1 does not resolve them (last write
 wins at runtime).
 

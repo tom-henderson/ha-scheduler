@@ -1,10 +1,12 @@
 """Tests for the data model: snapping, validation, serialization."""
 
 from custom_components.daily_schedule.models import (
+    ALL_DAYS,
     Bar,
     Schedule,
     Segment,
     Trigger,
+    normalize_days,
     normalize_expr,
     snap,
     snap_offset,
@@ -215,6 +217,34 @@ def test_plain_clock_segment_carries_no_expr_keys():
     assert seg.start_expr is None and seg.end_expr is None
     out = seg.to_dict()
     assert "start_expr" not in out and "end_expr" not in out
+
+
+def test_days_default_to_every_day_when_absent():
+    # A bar with no `days` (existing configs) runs every day — this is the
+    # migration path for issue #5.
+    bar = Bar.from_dict({"name": "b", "type": "light"})
+    assert bar.days == list(ALL_DAYS)
+    assert all(bar.active_on(d) for d in range(7))
+
+
+def test_days_normalize_dedupes_sorts_and_drops_out_of_range():
+    assert normalize_days([2, 0, 0, 9, -1, 5]) == [0, 2, 5]
+    assert normalize_days(["1", "3"]) == [1, 3]
+    assert normalize_days(None) == list(ALL_DAYS)
+    # An explicit empty list is preserved (bar active on no day).
+    assert normalize_days([]) == []
+
+
+def test_days_roundtrip_and_active_on():
+    bar = Bar.from_dict(
+        {"name": "Weekday lights", "type": "light", "days": [0, 1, 2, 3, 4]}
+    )
+    assert bar.days == [0, 1, 2, 3, 4]
+    assert bar.active_on(0) and bar.active_on(4)
+    assert not bar.active_on(5) and not bar.active_on(6)
+    out = bar.to_dict()
+    assert out["days"] == [0, 1, 2, 3, 4]
+    assert Bar.from_dict(out).to_dict() == out
 
 
 def test_active_intervals_excludes_off_state():
