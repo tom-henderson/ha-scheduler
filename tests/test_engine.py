@@ -1,6 +1,7 @@
 """Engine tests against a real hass: boundary execution, sync, enable gating."""
 
-from datetime import timedelta
+from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 from freezegun import freeze_time
@@ -12,6 +13,22 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.daily_schedule.const import DOMAIN
+
+
+def _fake_sun(times: dict[str, tuple[int, int]]):
+    """A stand-in for get_astral_event_date returning fixed UTC times per event.
+
+    `times` maps an event name -> (hour, minute); a missing event returns None
+    (the event doesn't occur that day).
+    """
+
+    def _resolve(_hass, event, day):
+        hm = times.get(event)
+        if hm is None:
+            return None
+        return datetime(day.year, day.month, day.day, hm[0], hm[1], tzinfo=timezone.utc)
+
+    return _resolve
 
 
 async def _setup(hass: HomeAssistant, config_entry, schedule: dict):
@@ -171,6 +188,139 @@ async def test_disabled_bar_skipped(hass, config_entry, light_calls):
         )
         await hass.async_block_till_done()
     assert not on, "disabled bar must not be synced"
+
+
+_SUN = "custom_components.daily_schedule.engine.get_astral_event_date"
+
+
+async def test_solar_boundary_resolves_and_syncs(hass, config_entry, light_calls):
+    on, off = light_calls
+    # Light On from sunset -> 23:00. Sunset today is 18:00; freeze at 19:00.
+    with freeze_time("2024-06-01 19:00:00"), patch(_SUN, _fake_sun({"sunset": (18, 0)})):
+        await _setup(
+            hass,
+            config_entry,
+            {
+                "enabled": True,
+                "bars": [
+                    {
+                        "id": "bar1",
+                        "name": "Porch",
+                        "type": "light",
+                        "base": 0,
+                        "targets": ["light.porch"],
+                        "segments": [
+                            {
+                                "start": 18,
+                                "end": 23,
+                                "state": 1,
+                                "start_expr": {"event": "sunset", "offset": 0},
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+    assert on, "expected light.turn_on: 19:00 is within sunset(18:00)-23:00"
+
+
+async def test_solar_boundary_with_offset(hass, config_entry, light_calls):
+    on, off = light_calls
+    # On from sunset-30m. Sunset 18:00 -> resolves 17:30. Freeze at 17:40 -> on.
+    with freeze_time("2024-06-01 17:40:00"), patch(_SUN, _fake_sun({"sunset": (18, 0)})):
+        await _setup(
+            hass,
+            config_entry,
+            {
+                "enabled": True,
+                "bars": [
+                    {
+                        "id": "bar1",
+                        "name": "Porch",
+                        "type": "light",
+                        "base": 0,
+                        "targets": ["light.porch"],
+                        "segments": [
+                            {
+                                "start": 17.5,
+                                "end": 23,
+                                "state": 1,
+                                "start_expr": {"event": "sunset", "offset": -0.5},
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+    assert on, "expected on: 17:40 is after sunset-30m (17:30)"
+
+
+async def test_inverted_solar_segment_dropped(hass, config_entry, light_calls):
+    on, off = light_calls
+    # "On at 07:00 until sunrise" — but the sun is already up (sunrise 05:00),
+    # so the window collapses and the light must stay off (drop rule, issue #3).
+    with freeze_time("2024-06-01 08:00:00"), patch(_SUN, _fake_sun({"sunrise": (5, 0)})):
+        await _setup(
+            hass,
+            config_entry,
+            {
+                "enabled": True,
+                "bars": [
+                    {
+                        "id": "bar1",
+                        "name": "Morning",
+                        "type": "light",
+                        "base": 0,
+                        "targets": ["light.porch"],
+                        "segments": [
+                            {
+                                "start": 7,
+                                "end": 5,
+                                "state": 1,
+                                "end_expr": {"event": "sunrise", "offset": 0},
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+    assert not on, "inverted solar segment must not turn the light on"
+
+
+async def test_non_inverted_solar_segment_active(hass, config_entry, light_calls):
+    on, off = light_calls
+    # Same "07:00 until sunrise", but sunrise is 09:00 -> a real 07:00-09:00
+    # window; at 08:00 the light is on.
+    with freeze_time("2024-06-01 08:00:00"), patch(_SUN, _fake_sun({"sunrise": (9, 0)})):
+        await _setup(
+            hass,
+            config_entry,
+            {
+                "enabled": True,
+                "bars": [
+                    {
+                        "id": "bar1",
+                        "name": "Morning",
+                        "type": "light",
+                        "base": 0,
+                        "targets": ["light.porch"],
+                        "segments": [
+                            {
+                                "start": 7,
+                                "end": 9,
+                                "state": 1,
+                                "end_expr": {"event": "sunrise", "offset": 0},
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+    assert on, "expected on: 08:00 is within 07:00-sunrise(09:00)"
 
 
 async def test_sync_now_service(hass, config_entry, light_calls):

@@ -4,6 +4,30 @@ export const MIN_SEGMENT = SNAP;
 
 export const DOMAIN = "daily_schedule";
 
+/**
+ * Solar events selectable as boundary anchors (issue #3). `attr` is the
+ * `sun.sun` attribute holding the next occurrence, used to resolve an
+ * approximate "today" time for the card's layout and the editor hint. `icon`
+ * marks a solar edge on the timeline.
+ */
+export const SUN_EVENTS: {
+  key: "sunrise" | "sunset" | "dawn" | "dusk";
+  label: string;
+  attr: string;
+  icon: string;
+}[] = [
+  { key: "sunrise", label: "Sunrise", attr: "next_rising", icon: "mdi:weather-sunset-up" },
+  { key: "sunset", label: "Sunset", attr: "next_setting", icon: "mdi:weather-sunset-down" },
+  { key: "dawn", label: "Dawn", attr: "next_dawn", icon: "mdi:weather-sunny-alert" },
+  { key: "dusk", label: "Dusk", attr: "next_dusk", icon: "mdi:weather-night" },
+];
+
+/** Max magnitude of a solar offset, in hours (matches the backend clamp). */
+export const MAX_SOLAR_OFFSET = 2;
+
+/** Semantic colour for solar markers/edges. */
+export const SUN_COLOR = "#f5b301";
+
 /** Jitter presets, in hours, matching the mockup. */
 export const JITTERS: { v: number; label: string }[] = [
   { v: 0, label: "None" },

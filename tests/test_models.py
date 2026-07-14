@@ -1,6 +1,14 @@
 """Tests for the data model: snapping, validation, serialization."""
 
-from custom_components.daily_schedule.models import Bar, Schedule, Segment, Trigger, snap
+from custom_components.daily_schedule.models import (
+    Bar,
+    Schedule,
+    Segment,
+    Trigger,
+    normalize_expr,
+    snap,
+    snap_offset,
+)
 
 
 def test_snap_rounds_to_quarter_hour():
@@ -155,6 +163,58 @@ def test_range_bar_has_empty_triggers_and_stateless_base_clamps():
     # A trigger bar takes no state; base clamps to 0 without a states list.
     trig = Bar.from_dict({"name": "t", "type": "trigger", "base": 3})
     assert trig.base == 0
+
+
+def test_snap_offset_grids_and_clamps():
+    assert snap_offset(-0.5) == -0.5
+    assert snap_offset(0.13) == 0.25
+    assert snap_offset(-0.13) == -0.25
+    assert snap_offset(5) == 2.0  # clamped to +MAX
+    assert snap_offset(-5) == -2.0  # clamped to -MAX
+
+
+def test_normalize_expr_accepts_valid_and_rejects_junk():
+    assert normalize_expr({"event": "sunset", "offset": -0.5}) == {
+        "event": "sunset",
+        "offset": -0.5,
+    }
+    # Offset snapped + clamped.
+    assert normalize_expr({"event": "sunrise", "offset": 9}) == {
+        "event": "sunrise",
+        "offset": 2.0,
+    }
+    # Missing offset defaults to 0.
+    assert normalize_expr({"event": "dawn"}) == {"event": "dawn", "offset": 0.0}
+    # Junk / unknown event / plain number -> None (stays an absolute boundary).
+    assert normalize_expr({"event": "lunchtime"}) is None
+    assert normalize_expr(18.5) is None
+    assert normalize_expr(None) is None
+
+
+def test_segment_parses_solar_exprs_and_roundtrips():
+    seg = Segment.from_dict(
+        {
+            "start": 17.5,
+            "end": 23,
+            "state": 1,
+            "start_expr": {"event": "sunset", "offset": -0.5},
+        },
+        "light",
+    )
+    assert seg.start_expr == {"event": "sunset", "offset": -0.5}
+    assert seg.end_expr is None  # a clock end
+    out = seg.to_dict()
+    assert out["start_expr"] == {"event": "sunset", "offset": -0.5}
+    assert "end_expr" not in out  # absent boundary stays compact
+    assert Segment.from_dict(out, "light").to_dict() == out
+
+
+def test_plain_clock_segment_carries_no_expr_keys():
+    # Backward compatibility: an existing segment (no expr) serialises unchanged.
+    seg = Segment.from_dict({"start": 6, "end": 9, "state": 1}, "light")
+    assert seg.start_expr is None and seg.end_expr is None
+    out = seg.to_dict()
+    assert "start_expr" not in out and "end_expr" not in out
 
 
 def test_active_intervals_excludes_off_state():

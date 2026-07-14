@@ -160,7 +160,7 @@ The mockup is plain React with inline styles and `lucide-react` icons. For the H
 ## 9. Open questions to confirm with product owner
 These were explicitly **deferred**, not rejected — revisit for v1.1+:
 1. **Level / percentage states** (dimmable lights, partial covers, fan %): deferred for v1. Model already leaves room (state index → could become richer). Confirm when to add.
-2. **Sun-relative boundaries** ("sunset − 30m"): deferred. Would require boundaries to be expressions, not just clock times.
+2. **Sun-relative boundaries** ("sunset − 30m"): **implemented** (issue #3) — see §10.
 3. **Conflict resolution / priority:** v1 is passive-warning only. Confirm whether a priority order ("higher bar wins") is wanted later.
 4. **Jitter re-roll timing:** once per daily rebuild (recommended) vs. per boundary — confirm.
 5. **Targets granularity:** entity_ids only, or also areas/rooms/labels? Affects picker + conflict detection.
@@ -168,7 +168,25 @@ These were explicitly **deferred**, not rejected — revisit for v1.1+:
 
 ## 10. Explicitly out of scope for v1
 - Level/percentage per-segment values.
-- Sun-relative or expression-based boundaries.
 - Priority-based conflict resolution.
 - Multiple distinct day-types (e.g. weekday vs weekend) — v1 is a single repeating 24h schedule.
 - Inline editing of bar name/targets was not built in the mockup; implement with standard HA pickers in production.
+
+### Implemented after v1
+- **Sun-relative boundaries** — issue #3. A segment's `start`/`end` is a `float`
+  (absolute clock time, as before) **or** an expression `{ event, offset }` where
+  `event ∈ {sunrise, sunset, dawn, dusk}` and `offset` is on the 15-min grid,
+  clamped to ±2h. Per-**boundary** (each edge independently clock or solar), so
+  the mixed case `sunset − 30m → 23:00` is expressible. A plain number stays
+  absolute, so existing configs need no migration (no store-version bump).
+  - **Resolution:** the engine resolves solar boundaries to concrete times for
+    *today* at the midnight rebuild (`_resolve_bar` → `get_astral_event_date`),
+    then the existing jitter + neighbour-clamp pipeline runs unchanged.
+  - **Inverted edges → drop:** if a segment's own edges invert once resolved
+    (`start ≥ end`, e.g. `07:00 → sunrise` when the sun is already up), the
+    segment is inactive that day. Neighbour/day-bound overflow still clamps.
+    This delivers "on at 7am *unless the sun is already up*".
+  - **Conflict detection** and the card's static layout use the stored
+    resolved-for-today value (approximate across the year, but stable).
+  - The general "run only while the sun is below the horizon" **condition**
+    (independent of a boundary) is left to the conditions feature (#22).

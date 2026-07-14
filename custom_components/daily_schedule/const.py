@@ -22,6 +22,13 @@ HOURS_PER_DAY: Final = 24.0
 # default `base`, and is excluded from conflict / "active" checks.
 OFF_STATE: Final = 0
 
+# Sun-relative boundaries (issue #3). A segment boundary may anchor to one of
+# these solar events plus an offset instead of a fixed clock time. The names map
+# directly to Home Assistant's `sun` helper events.
+SUN_EVENTS: Final = ("sunrise", "sunset", "dawn", "dusk")
+# Offset is expressed in hours on the 15-minute grid and clamped to ±this.
+MAX_SOLAR_OFFSET: Final = 2.0
+
 # Services / signals.
 SERVICE_SYNC_NOW: Final = "sync_now"
 ATTR_ENTRY_ID: Final = "entry_id"

@@ -1,18 +1,22 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 
-import { JITTERS } from "./const";
+import { JITTERS, MAX_SOLAR_OFFSET, SNAP, SUN_EVENTS } from "./const";
 import {
   fmt,
   isActive,
+  offsetLabel,
   paramKeys,
   paramOptions,
   paramSchema,
   paramValue,
   parse,
+  resolveBoundaryHour,
+  snap,
+  sunEventDef,
 } from "./logic";
 import { sharedStyles } from "./styles";
-import type { HomeAssistant, Segment, TypeParam, TypeRegistry } from "./types";
+import type { HomeAssistant, Segment, SunExpr, TypeParam, TypeRegistry } from "./types";
 
 /** Value shape emitted by HA's media selector. */
 interface MediaValue {
@@ -121,6 +125,103 @@ export class DsSegmentEditor extends LitElement {
         accent-color: var(--accent, var(--ds-accent));
         cursor: pointer;
       }
+      /* -- sun-relative boundary editor (issue #3) -- */
+      .bnd {
+        border: 1px solid var(--ds-line);
+        border-radius: 10px;
+        padding: 10px;
+        margin: 12px 0 0;
+      }
+      .bnd-head {
+        display: flex;
+        align-items: center;
+        margin-bottom: 9px;
+      }
+      .bnd-head .lbl {
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .toggle {
+        margin-left: auto;
+        display: inline-flex;
+        border: 1px solid var(--ds-line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .toggle button {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 9px;
+        font-size: 11px;
+        font-weight: 600;
+        background: transparent;
+        color: var(--ds-dim);
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .toggle button.sel {
+        background: color-mix(in srgb, var(--ds-accent) 20%, transparent);
+        color: var(--ds-text);
+      }
+      .toggle button.sel.sun {
+        background: color-mix(in srgb, var(--ds-sun) 26%, transparent);
+        color: #ffe9b0;
+      }
+      .evrow {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 9px;
+      }
+      .evrow .sbtn {
+        flex: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 6px 4px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid var(--ds-line);
+        background: transparent;
+        color: var(--ds-dim);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .evrow .sbtn.sel {
+        border-color: var(--ds-sun);
+        background: color-mix(in srgb, var(--ds-sun) 18%, transparent);
+        color: var(--ds-text);
+      }
+      .offrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .offrow .k {
+        font-size: 11px;
+        color: var(--ds-dim);
+        width: 44px;
+      }
+      .offrow .stepper {
+        flex: 1;
+      }
+      .resolved {
+        margin-top: 9px;
+        font-size: 11px;
+        color: #ffe0a3;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: color-mix(in srgb, var(--ds-sun) 12%, transparent);
+        border-radius: 7px;
+        padding: 5px 8px;
+      }
+      .resolved ha-icon {
+        color: var(--ds-sun);
+      }
     `,
   ];
 
@@ -134,8 +235,12 @@ export class DsSegmentEditor extends LitElement {
   @property({ attribute: false }) entities: string[] = [];
 
   @state() private _si = 0;
-  @state() private _start = "";
-  @state() private _end = "";
+  // Each boundary is a clock string OR a solar expression (issue #3). The
+  // clock string is kept even in Sun mode so toggling back restores it.
+  @state() private _startClock = "";
+  @state() private _endClock = "";
+  @state() private _startExpr: SunExpr | null = null;
+  @state() private _endExpr: SunExpr | null = null;
   @state() private _jit = 0;
   @state() private _err = "";
   @state() private _data: Record<string, unknown> = {};
@@ -143,13 +248,59 @@ export class DsSegmentEditor extends LitElement {
   override willUpdate(changed: Map<string, unknown>): void {
     if (changed.has("segment")) {
       this._si = this.segment.state;
-      this._start = fmt(this.segment.start);
-      this._end = fmt(this.segment.end);
+      this._startClock = fmt(this.segment.start);
+      this._endClock = fmt(this.segment.end);
+      this._startExpr = this.segment.start_expr ?? null;
+      this._endExpr = this.segment.end_expr ?? null;
       this._jit = this.segment.jitter ?? 0;
       this._data = { ...(this.segment.data ?? {}) };
       this._err = "";
     }
     this._seedRequiredSelects();
+  }
+
+  // -- boundary helpers (clock <-> sun) ---------------------------------
+
+  private _expr(which: "start" | "end"): SunExpr | null {
+    return which === "start" ? this._startExpr : this._endExpr;
+  }
+
+  private _setExpr(which: "start" | "end", expr: SunExpr | null): void {
+    if (which === "start") this._startExpr = expr;
+    else this._endExpr = expr;
+    this._err = "";
+  }
+
+  private _setMode(which: "start" | "end", mode: "clock" | "sun"): void {
+    if (mode === "sun") {
+      if (!this._expr(which)) this._setExpr(which, { event: "sunset", offset: 0 });
+    } else {
+      // Back to clock: seed the field from today's resolved solar time so the
+      // value doesn't jump.
+      const nominal = which === "start" ? this.segment.start : this.segment.end;
+      const resolved = resolveBoundaryHour(this.hass, nominal, this._expr(which));
+      if (which === "start") this._startClock = fmt(resolved);
+      else this._endClock = fmt(resolved);
+      this._setExpr(which, null);
+    }
+  }
+
+  private _stepOffset(which: "start" | "end", dir: 1 | -1): void {
+    const expr = this._expr(which);
+    if (!expr) return;
+    // Grid to 15-min (offsets are signed, so no [0,24] clamp like `snap`).
+    const gridded = Math.round((expr.offset + dir * SNAP) / SNAP) * SNAP;
+    const offset = Math.max(-MAX_SOLAR_OFFSET, Math.min(MAX_SOLAR_OFFSET, gridded));
+    this._setExpr(which, { ...expr, offset: Math.round(offset * 1e4) / 1e4 });
+  }
+
+  /** Today's resolved "≈ HH:MM" for a solar boundary, or null if unresolvable. */
+  private _resolvedHint(which: "start" | "end"): string | null {
+    const expr = this._expr(which);
+    if (!expr) return null;
+    if (this.hass?.states?.["sun.sun"] === undefined) return null;
+    const nominal = which === "start" ? this.segment.start : this.segment.end;
+    return fmt(resolveBoundaryHour(this.hass, nominal, expr));
   }
 
   /** Default a required select (e.g. climate mode) to the first option the
@@ -190,12 +341,30 @@ export class DsSegmentEditor extends LitElement {
   }
 
   private _save(): void {
-    const ps = parse(this._start);
-    const pe = parse(this._end);
-    if (ps == null || pe == null) return this._fail("Use HH:MM");
-    if (pe <= ps) return this._fail("End must be after start");
-    if (ps < this.bounds.min || pe > this.bounds.max)
-      return this._fail(`Stay within ${fmt(this.bounds.min)}–${fmt(this.bounds.max)}`);
+    // Resolve each boundary to a concrete "nominal" hour: from the solar event
+    // (today) when in Sun mode, else from the clock field.
+    let start: number;
+    let end: number;
+    if (this._startExpr) start = snap(resolveBoundaryHour(this.hass, this.segment.start, this._startExpr));
+    else {
+      const p = parse(this._startClock);
+      if (p == null) return this._fail("Use HH:MM");
+      start = p;
+    }
+    if (this._endExpr) end = snap(resolveBoundaryHour(this.hass, this.segment.end, this._endExpr));
+    else {
+      const p = parse(this._endClock);
+      if (p == null) return this._fail("Use HH:MM");
+      end = p;
+    }
+    // Order/bounds only bind when BOTH edges are clock. With a solar edge the
+    // resolved order varies by day; an inverted day is handled by the engine
+    // (the segment simply doesn't run that day).
+    if (!this._startExpr && !this._endExpr) {
+      if (end <= start) return this._fail("End must be after start");
+      if (start < this.bounds.min || end > this.bounds.max)
+        return this._fail(`Stay within ${fmt(this.bounds.min)}–${fmt(this.bounds.max)}`);
+    }
     // Persist only the params that apply to the chosen state; an off segment
     // carries none. A media param owns several data keys.
     const keep = new Set<string>();
@@ -204,7 +373,16 @@ export class DsSegmentEditor extends LitElement {
     for (const k of keep) if (this._data[k] !== undefined) data[k] = this._data[k];
     this.dispatchEvent(
       new CustomEvent("segment-save", {
-        detail: { ...this.segment, state: this._si, start: ps, end: pe, jitter: this._jit, data },
+        detail: {
+          ...this.segment,
+          state: this._si,
+          start,
+          end,
+          jitter: this._jit,
+          data,
+          start_expr: this._startExpr,
+          end_expr: this._endExpr,
+        },
       })
     );
   }
@@ -239,30 +417,7 @@ export class DsSegmentEditor extends LitElement {
 
         ${this._params.map((p) => this._renderParam(p))}
 
-        <div class="row">
-          <div>
-            <div class="field-label">Start</div>
-            <input
-              class="time"
-              .value=${this._start}
-              @input=${(e: Event) => {
-                this._start = (e.target as HTMLInputElement).value;
-                this._err = "";
-              }}
-            />
-          </div>
-          <div>
-            <div class="field-label">End</div>
-            <input
-              class="time"
-              .value=${this._end}
-              @input=${(e: Event) => {
-                this._end = (e.target as HTMLInputElement).value;
-                this._err = "";
-              }}
-            />
-          </div>
-        </div>
+        ${this._renderBoundary("start")} ${this._renderBoundary("end")}
         <div class="hint" style=${`color:${this._err ? "var(--ds-warn)" : "var(--ds-dim)"}`}>
           ${this._err || `Available ${fmt(this.bounds.min)}–${fmt(this.bounds.max)}`}
         </div>
@@ -292,6 +447,91 @@ export class DsSegmentEditor extends LitElement {
             <ha-icon icon="mdi:check" style="--mdc-icon-size:16px"></ha-icon> Save
           </button>
         </div>
+      </div>
+    `;
+  }
+
+  private _renderBoundary(which: "start" | "end") {
+    const expr = this._expr(which);
+    const label = which === "start" ? "Start" : "End";
+    const clock = which === "start" ? this._startClock : this._endClock;
+    const hint = this._resolvedHint(which);
+    return html`
+      <div class="bnd">
+        <div class="bnd-head">
+          <span class="lbl">${label}</span>
+          <span class="toggle">
+            <button
+              class=${expr ? "" : "sel"}
+              @click=${() => this._setMode(which, "clock")}
+            >
+              <ha-icon icon="mdi:clock-outline" style="--mdc-icon-size:13px"></ha-icon>Clock
+            </button>
+            <button
+              class=${expr ? "sel sun" : ""}
+              @click=${() => this._setMode(which, "sun")}
+            >
+              <ha-icon icon="mdi:weather-sunny" style="--mdc-icon-size:13px"></ha-icon>Sun
+            </button>
+          </span>
+        </div>
+        ${expr
+          ? html`
+              <div class="evrow">
+                ${SUN_EVENTS.map(
+                  (ev) => html`
+                    <button
+                      class=${`sbtn ${expr.event === ev.key ? "sel" : ""}`}
+                      title=${ev.label}
+                      @click=${() => this._setExpr(which, { ...expr, event: ev.key })}
+                    >
+                      <ha-icon icon=${ev.icon} style="--mdc-icon-size:14px"></ha-icon>
+                      ${ev.label}
+                    </button>
+                  `
+                )}
+              </div>
+              <div class="offrow">
+                <span class="k">Offset</span>
+                <div class="stepper">
+                  <button
+                    @click=${() => this._stepOffset(which, -1)}
+                    ?disabled=${expr.offset <= -MAX_SOLAR_OFFSET}
+                    aria-label="Earlier"
+                  >
+                    <ha-icon icon="mdi:minus" style="--mdc-icon-size:15px"></ha-icon>
+                  </button>
+                  <span class="val">${offsetLabel(expr.offset)}</span>
+                  <button
+                    @click=${() => this._stepOffset(which, 1)}
+                    ?disabled=${expr.offset >= MAX_SOLAR_OFFSET}
+                    aria-label="Later"
+                  >
+                    <ha-icon icon="mdi:plus" style="--mdc-icon-size:15px"></ha-icon>
+                  </button>
+                </div>
+              </div>
+              ${hint
+                ? html`<div class="resolved">
+                    <ha-icon icon="mdi:weather-sunset" style="--mdc-icon-size:13px"></ha-icon>
+                    ≈ ${hint} today
+                  </div>`
+                : html`<div class="hint" style="margin:8px 0 0">
+                    Resolves per day from your location’s ${sunEventDef(expr.event)?.label ?? ""}.
+                  </div>`}
+            `
+          : html`
+              <input
+                class="time"
+                .value=${clock}
+                @input=${(e: Event) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  if (which === "start") this._startClock = v;
+                  else this._endClock = v;
+                  this._err = "";
+                }}
+              />
+            `}
       </div>
     `;
   }
