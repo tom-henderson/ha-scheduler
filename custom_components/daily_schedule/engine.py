@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime, timedelta
+from dataclasses import replace
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant, callback
@@ -15,9 +16,16 @@ from homeassistant.helpers.event import (
     async_track_point_in_time,
     async_track_time_change,
 )
+from homeassistant.helpers.sun import get_astral_event_date
 from homeassistant.util import dt as dt_util
 
-from .const import apply_params, is_stateless, step_should_fire, steps_for
+from .const import (
+    HOURS_PER_DAY,
+    apply_params,
+    is_stateless,
+    step_should_fire,
+    steps_for,
+)
 from .logic import (
     ChangePoint,
     cell_at,
@@ -25,7 +33,7 @@ from .logic import (
     jittered_segments,
     jittered_trigger_at,
 )
-from .models import Bar, Trigger
+from .models import Bar, Segment, Trigger
 
 if TYPE_CHECKING:
     from .manager import ScheduleManager
@@ -81,13 +89,62 @@ class ScheduleEngine:
     # -- planning ----------------------------------------------------------
 
     def _rebuild_plans(self) -> None:
-        """Roll jitter for the day and cache the resulting plan per enabled bar."""
+        """Roll jitter for the day and cache the resulting plan per enabled bar.
+
+        Sun-relative boundaries are resolved to concrete times for *today* first
+        (issue #3), so the rest of the pipeline — jitter, neighbour-clamping,
+        change-points — is unchanged and clock-based.
+        """
         self._plans = {}
+        today = dt_util.now().date()
         for bar in self._schedule.bars:
             if not bar.enabled or is_stateless(bar.type):
                 continue
-            intervals = jittered_segments(bar, self._rng)
-            self._plans[bar.id] = daily_changepoints(bar, intervals)
+            resolved = self._resolve_bar(bar, today)
+            intervals = jittered_segments(resolved, self._rng)
+            self._plans[bar.id] = daily_changepoints(resolved, intervals)
+
+    # -- sun-relative resolution ------------------------------------------
+
+    def _resolve_bar(self, bar: Bar, day: date) -> Bar:
+        """Return a copy of `bar` with every solar boundary resolved for `day`.
+
+        Segments whose boundaries invert once resolved (start >= end) — e.g.
+        "07:00 -> sunrise" on a day the sun is already up by 07:00 — are dropped:
+        the window doesn't exist that day (agreed drop rule). Neighbour/day-bound
+        overflow is left to the existing clamp in `jittered_segments`.
+        """
+        resolved: list[Segment] = []
+        for seg in bar.sorted_segments():
+            start = self._resolve_boundary(seg.start, seg.start_expr, day)
+            end = self._resolve_boundary(seg.end, seg.end_expr, day)
+            if start is None or end is None:
+                continue  # solar event doesn't occur today (e.g. polar) -> skip
+            if start >= end:
+                continue  # inverted after resolving -> inactive today
+            resolved.append(
+                replace(seg, start=start, end=end, start_expr=None, end_expr=None)
+            )
+        return replace(bar, segments=resolved)
+
+    def _resolve_boundary(
+        self, nominal: float, expr: dict[str, Any] | None, day: date
+    ) -> float | None:
+        """Concrete hours-past-midnight for a boundary on `day`.
+
+        A clock boundary (`expr is None`) returns its stored value. A solar
+        boundary resolves its event for `day`, adds the offset, and clamps into
+        the day; None if the event doesn't occur (caller drops the segment).
+        """
+        if not expr:
+            return nominal
+        event_dt = get_astral_event_date(self.hass, expr["event"], day)
+        if event_dt is None:
+            return None
+        local = dt_util.as_local(event_dt)
+        midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        hours = (local - midnight).total_seconds() / 3600 + float(expr["offset"])
+        return max(0.0, min(HOURS_PER_DAY, round(hours, 6)))
 
     def _schedule_boundaries(self) -> None:
         now = dt_util.now()

@@ -1,8 +1,17 @@
-import { HOURS, JITTERS, SNAP, MIN_SEGMENT, HVAC_MODE_COLORS, typeColor } from "./const";
+import {
+  HOURS,
+  HVAC_MODE_COLORS,
+  JITTERS,
+  MIN_SEGMENT,
+  SNAP,
+  SUN_EVENTS,
+  typeColor,
+} from "./const";
 import type {
   Bar,
   HomeAssistant,
   Segment,
+  SunExpr,
   Trigger,
   TypeParam,
   TypeRegistry,
@@ -150,6 +159,56 @@ export function paramSummary(
 
 export function jitterLabel(v: number): string {
   return (JITTERS.find((j) => Math.abs(j.v - v) < 0.001) ?? JITTERS[0]).label;
+}
+
+// -- sun-relative boundaries (issue #3) -------------------------------------
+
+export function sunEventDef(event: string) {
+  return SUN_EVENTS.find((e) => e.key === event);
+}
+
+/** Format a solar offset in hours as "±0" / "−30m" / "+1h 15m". */
+export function offsetLabel(offset: number): string {
+  const mins = Math.round(offset * 60);
+  if (mins === 0) return "±0";
+  const a = Math.abs(mins);
+  const h = Math.floor(a / 60);
+  const m = a % 60;
+  const hm = h ? `${h}h${m ? ` ${m}m` : ""}` : `${m}m`;
+  return `${mins < 0 ? "−" : "+"}${hm}`;
+}
+
+/** Today's hour-of-day for a solar event, from the `sun.sun` entity, or null. */
+export function sunEventHour(hass: HomeAssistant | undefined, event: string): number | null {
+  const def = sunEventDef(event);
+  const iso = def && hass?.states?.["sun.sun"]?.attributes?.[def.attr];
+  if (typeof iso !== "string") return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+
+/**
+ * Resolve a boundary to an absolute hour: the solar event (+offset) if `expr`
+ * is set and resolvable, otherwise the stored clock `nominal`.
+ */
+export function resolveBoundaryHour(
+  hass: HomeAssistant | undefined,
+  nominal: number,
+  expr: SunExpr | null | undefined
+): number {
+  if (!expr) return nominal;
+  const base = sunEventHour(hass, expr.event);
+  if (base == null) return nominal;
+  return Math.max(0, Math.min(HOURS, base + expr.offset));
+}
+
+/** Human label for a boundary: "07:00" (clock) or "Sunset −30m" (solar). */
+export function boundaryLabel(seg: Segment, which: "start" | "end"): string {
+  const expr = which === "start" ? seg.start_expr : seg.end_expr;
+  if (!expr) return fmt(which === "start" ? seg.start : seg.end);
+  const def = sunEventDef(expr.event);
+  return `${def?.label ?? expr.event}${expr.offset ? ` ${offsetLabel(expr.offset)}` : ""}`;
 }
 
 export function sortedSegments(bar: Bar): Segment[] {

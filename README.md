@@ -18,6 +18,12 @@ visual, drag-driven card. No YAML required for the common case.
 - **Boundary-driven engine.** Entities are switched exactly when the clock
   crosses a segment boundary — plus an automatic **state sync** at startup and
   after edits so the schedule is correct even if HA was restarted.
+- **Sun-relative boundaries.** A segment's start or end can anchor to a solar
+  event (**sunrise, sunset, dawn, dusk**) plus a ±2h offset — e.g.
+  _sunset − 30m → 23:00_. Each boundary is independently a clock time or a solar
+  anchor; the concrete time is resolved per day. A segment whose edges invert
+  once resolved (e.g. _07:00 → sunrise_ when the sun is already up) simply
+  doesn't run that day — so "on at 7am **unless the sun is already up**" works.
 - **Jitter.** Randomise a segment's boundaries by ±5–30 min, re-rolled once per
   day and clamped so segments never reorder or overlap.
 - **Conflict warnings.** If two enabled bars target the same entity with
@@ -105,9 +111,12 @@ With a single Daily Schedule set up, the card auto-selects it.
 
 ## Using the card
 
-- **Tap a segment** to edit its state, start/end times (HH:MM, validated) and
-  jitter. **Drag** the body to move it, or an edge to resize (clamped to its
-  neighbours, 15-min minimum).
+- **Tap a segment** to edit its state, start/end times and jitter. Each
+  **Start** and **End** toggles between **Clock** (HH:MM, validated) and **Sun**
+  (pick sunrise/sunset/dawn/dusk and a ±offset; a "≈ HH:MM today" hint shows the
+  resolved time). **Drag** the body to move it, or an edge to resize (clamped to
+  its neighbours, 15-min minimum); solar edges show a sun marker and are edited
+  in the popover rather than dragged.
 - **Tap the base layer** (the fill behind the segments) to set the default
   state applied to all uncovered time.
 - **+** adds a segment in the largest free gap and opens its editor.

@@ -16,6 +16,7 @@ export const sharedStyles = css`
     --ds-accent: var(--primary-color, #03a9f4);
     --ds-warn: var(--warning-color, #f5934e);
     --ds-now: var(--error-color, #ff5a6e);
+    --ds-sun: #f5b301;
   }
 
   .btn {

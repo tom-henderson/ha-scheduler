@@ -1,13 +1,22 @@
 import type { HomeAssistant, LovelaceCardConfig } from "custom-card-helpers";
 
+/** A sun-relative boundary anchor: a solar event plus a ±offset in hours. */
+export interface SunExpr {
+  event: "sunrise" | "sunset" | "dawn" | "dusk";
+  offset: number; // hours on the 15-min grid, clamped to ±2
+}
+
 export interface Segment {
   id: string;
-  start: number; // hours past midnight
+  start: number; // hours past midnight (resolved-for-today when *_expr is set)
   end: number;
   state: number; // index into the type's state list
   jitter: number; // hours; 0 = none
   /** Per-segment service params for richer types (e.g. climate temperature). */
   data?: Record<string, unknown>;
+  /** Sun-relative anchors; absent/null = a fixed clock boundary (issue #3). */
+  start_expr?: SunExpr | null;
+  end_expr?: SunExpr | null;
 }
 
 export interface TriggerAction {

@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 
 import { HOURS, SNAP, typeColor } from "./const";
 import {
+  boundaryLabel,
   boundsFor,
   coveringSegment,
   fmt,
@@ -16,6 +17,7 @@ import {
   sortedSegments,
   sortedTriggers,
   stateLabel,
+  sunEventDef,
 } from "./logic";
 import "./ds-bar-settings";
 import "./ds-trigger-editor";
@@ -178,6 +180,16 @@ export class DsBar extends LitElement {
   // -- dragging ---------------------------------------------------------
 
   private _dragSeg(seg: Segment, mode: DragMode, e: PointerEvent): void {
+    // A solar boundary moves day to day, so it's edited in the popover, not
+    // dragged (issue #3). Skip the drag (and don't stop propagation) so the
+    // click still opens the editor; a clock edge on the same segment still drags.
+    if (
+      (mode === "move" && (seg.start_expr || seg.end_expr)) ||
+      (mode === "l" && seg.start_expr) ||
+      (mode === "r" && seg.end_expr)
+    ) {
+      return;
+    }
     e.stopPropagation();
     this._moved = false;
     const b = boundsFor(this.bar, seg);
@@ -439,12 +451,14 @@ export class DsBar extends LitElement {
     const dragging = this._drag?.id === s.id;
     const showStart = dragging && (this._drag!.mode === "move" || this._drag!.mode === "l");
     const showEnd = dragging && (this._drag!.mode === "move" || this._drag!.mode === "r");
-    const title = `${fmt(s.start)}–${fmt(s.end)} · ${label}${
+    const title = `${boundaryLabel(s, "start")}–${boundaryLabel(s, "end")} · ${label}${
       s.jitter ? ` · ${jitterLabel(s.jitter)}` : ""
     }`;
     return html`
       <div
-        class=${`seg ${active ? "active" : "inactive"} ${dragging ? "dragging" : ""}`}
+        class=${`seg ${active ? "active" : "inactive"} ${dragging ? "dragging" : ""} ${
+          s.start_expr ? "solar-l" : ""
+        } ${s.end_expr ? "solar-r" : ""}`}
         style=${`left:${left}%;width:${width}%${color ? `;--accent:${color}` : ""}`}
         title=${title}
         @pointerdown=${(e: PointerEvent) => this._dragSeg(s, "move", e)}
@@ -456,6 +470,7 @@ export class DsBar extends LitElement {
         <div class="handle l" @pointerdown=${(e: PointerEvent) => this._dragSeg(s, "l", e)}>
           <span></span>
         </div>
+        ${s.start_expr ? this._renderSunEdge(s, "start") : nothing}
         ${width > 8
           ? html`<span class="seg-label"
               >${label}${s.jitter
@@ -463,6 +478,7 @@ export class DsBar extends LitElement {
                 : nothing}</span
             >`
           : nothing}
+        ${s.end_expr ? this._renderSunEdge(s, "end") : nothing}
         <div class="handle r" @pointerdown=${(e: PointerEvent) => this._dragSeg(s, "r", e)}>
           <span></span>
         </div>
@@ -470,6 +486,16 @@ export class DsBar extends LitElement {
         ${showEnd ? html`<div class="bubble r">${fmt(s.end)}</div>` : nothing}
       </div>
     `;
+  }
+
+  /** A small sun marker on a solar boundary, at the segment's left/right edge. */
+  private _renderSunEdge(s: Segment, which: "start" | "end") {
+    const expr = which === "start" ? s.start_expr : s.end_expr;
+    if (!expr) return nothing;
+    const icon = sunEventDef(expr.event)?.icon ?? "mdi:weather-sunny";
+    return html`<div class=${`sun-edge ${which === "start" ? "l" : "r"}`} title=${boundaryLabel(s, which)}>
+      <ha-icon icon=${icon} style="--mdc-icon-size:11px"></ha-icon>
+    </div>`;
   }
 }
 
@@ -631,6 +657,51 @@ function barStyles() {
     .seg.dragging {
       z-index: 8;
       box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+    }
+    /* Solar edges (issue #3): a soft glow hints the boundary drifts by day. */
+    .seg.solar-l {
+      cursor: pointer;
+    }
+    .seg.solar-l::before,
+    .seg.solar-r::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 20px;
+      pointer-events: none;
+    }
+    .seg.solar-l::before {
+      left: 0;
+      border-top-left-radius: 5px;
+      border-bottom-left-radius: 5px;
+      background: linear-gradient(90deg, color-mix(in srgb, var(--ds-sun) 70%, transparent), transparent);
+    }
+    .seg.solar-r::after {
+      right: 0;
+      border-top-right-radius: 5px;
+      border-bottom-right-radius: 5px;
+      background: linear-gradient(270deg, color-mix(in srgb, var(--ds-sun) 70%, transparent), transparent);
+    }
+    .sun-edge {
+      position: absolute;
+      top: -7px;
+      z-index: 6;
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: var(--ds-sun);
+      color: #1a1200;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+      pointer-events: none;
+    }
+    .sun-edge.l {
+      left: -8px;
+    }
+    .sun-edge.r {
+      right: -8px;
     }
     .seg-label {
       font-size: 10.5px;

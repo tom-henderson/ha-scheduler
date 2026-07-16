@@ -13,8 +13,10 @@ from uuid import uuid4
 
 from .const import (
     HOURS_PER_DAY,
+    MAX_SOLAR_OFFSET,
     OFF_STATE,
     SNAP,
+    SUN_EVENTS,
     clamp_state_index,
     is_active,
 )
@@ -30,6 +32,27 @@ def snap(value: float) -> float:
     return max(0.0, min(HOURS_PER_DAY, round(v, 4)))
 
 
+def snap_offset(value: float) -> float:
+    """Snap a solar offset (hours, may be negative) to the 15-min grid, ±MAX."""
+    v = round(float(value) / SNAP) * SNAP
+    return max(-MAX_SOLAR_OFFSET, min(MAX_SOLAR_OFFSET, round(v, 4)))
+
+
+def normalize_expr(raw: Any) -> dict[str, Any] | None:
+    """Coerce a boundary expression, or None if it isn't a valid solar anchor.
+
+    A valid expression is ``{"event": <sunrise|sunset|dawn|dusk>, "offset": h}``.
+    Anything else (including a plain number boundary) yields None, meaning the
+    boundary stays an absolute clock time.
+    """
+    if not isinstance(raw, dict):
+        return None
+    event = raw.get("event")
+    if event not in SUN_EVENTS:
+        return None
+    return {"event": event, "offset": snap_offset(raw.get("offset", 0.0))}
+
+
 @dataclass
 class Segment:
     """A timed override painted on top of a bar's base state."""
@@ -42,6 +65,12 @@ class Segment:
     # target temperature). Empty for the simple on/off types. Merged over the
     # type's registry defaults when the engine fires the service call.
     data: dict[str, Any] = field(default_factory=dict)
+    # Optional sun-relative anchors for the boundaries (issue #3). When set, the
+    # engine resolves the concrete time per day; `start`/`end` then hold the
+    # last card-resolved absolute value, used for static layout and conflict
+    # detection. None means the boundary is a fixed clock time.
+    start_expr: dict[str, Any] | None = None
+    end_expr: dict[str, Any] | None = None
     id: str = field(default_factory=lambda: _uid("seg"))
 
     @classmethod
@@ -58,10 +87,12 @@ class Segment:
             state=clamp_state_index(bar_type, int(data.get("state", 1))),
             jitter=max(0.0, float(data.get("jitter", 0.0))),
             data=dict(raw) if isinstance(raw, dict) else {},
+            start_expr=normalize_expr(data.get("start_expr")),
+            end_expr=normalize_expr(data.get("end_expr")),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "id": self.id,
             "start": self.start,
             "end": self.end,
@@ -69,6 +100,13 @@ class Segment:
             "jitter": self.jitter,
             "data": dict(self.data),
         }
+        # Only serialise solar anchors when present, so plain clock segments keep
+        # their compact shape and round-trip unchanged.
+        if self.start_expr:
+            out["start_expr"] = dict(self.start_expr)
+        if self.end_expr:
+            out["end_expr"] = dict(self.end_expr)
+        return out
 
 
 @dataclass
