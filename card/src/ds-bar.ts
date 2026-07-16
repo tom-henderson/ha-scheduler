@@ -239,8 +239,8 @@ export class DsBar extends LitElement {
 
     return html`
       <div
-        class=${`bar ${this.reordering ? "reordering" : ""}`}
-        style=${`opacity:${this._live ? 1 : 0.4};--accent:${accent}`}
+        class=${`bar ${this.reordering ? "reordering" : ""} ${this._live ? "" : "disabled"}`}
+        style=${`--accent:${accent}`}
       >
         <div class="head">
           <button
@@ -504,7 +504,12 @@ function barStyles() {
     .bar {
       margin-bottom: 14px;
       position: relative;
-      transition: opacity 0.2s;
+    }
+    /* Disabled bars stay fully legible and editable — only the timeline is
+       desaturated to signal "not running" (the per-bar switch carries the
+       state). See issue #23. */
+    .bar.disabled .track {
+      filter: grayscale(1) brightness(0.92);
     }
     .bar.reordering {
       z-index: 5;
