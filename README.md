@@ -1,3 +1,6 @@
+> [!CAUTION]
+> This repo is only public to make it easier to install & update with HACS. It is 100% vibe-coded, and I have no intention of supporting it beyond my personal needs.
+
 # Daily Schedule
 
 A Home Assistant custom integration + Lovelace card for building a **repeating
