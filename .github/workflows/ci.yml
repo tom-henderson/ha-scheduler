@@ -48,15 +48,11 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npm run lint
+      # The card bundle is a build artifact and is no longer committed (it is
+      # built here and shipped in the release zip). Build it before the smoke
+      # tests, which load it from the integration's frontend path.
       - name: Build card
         run: npm run build
-      - name: Verify committed bundle is up to date
-        run: |
-          if ! git diff --quiet -- ../custom_components/daily_schedule/frontend/daily-schedule-card.js; then
-            echo "::error::Built card differs from the committed bundle. Run 'npm run build' and commit the result."
-            git --no-pager diff --stat -- ../custom_components/daily_schedule/frontend/daily-schedule-card.js
-            exit 1
-          fi
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - name: Smoke tests
@@ -69,22 +65,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full history + tags to derive the version and push back
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: card/package-lock.json
-      - name: Build card bundle
-        working-directory: card
-        run: |
-          npm ci
-          npm run build
-      - name: Read version
+      # Version is owned by CI, not by feature PRs (which no longer touch the
+      # manifest). The next version is derived from the latest git tag and
+      # patch-bumped; a manifest version that is *ahead* of the latest tag wins,
+      # which is how an intentional minor/major bump is requested.
+      - name: Compute next version
         id: ver
         run: |
-          VERSION=$(python3 -c "import json;print(json.load(open('custom_components/daily_schedule/manifest.json'))['version'])")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      - name: Check whether this version is already released
+          git fetch --tags --force
+          LATEST=$(git tag -l 'v*' | sed 's/^v//' | sort -V | tail -n1)
+          MANIFEST=$(python3 -c "import json;print(json.load(open('custom_components/daily_schedule/manifest.json'))['version'])")
+          if [ -z "$LATEST" ]; then
+            NEXT="$MANIFEST"
+          else
+            IFS=. read -r MA MI PA <<<"$LATEST"
+            PATCH="$MA.$MI.$((PA + 1))"
+            HIGHEST=$(printf '%s\n%s\n' "$LATEST" "$MANIFEST" | sort -V | tail -n1)
+            if [ "$HIGHEST" = "$MANIFEST" ] && [ "$MANIFEST" != "$LATEST" ]; then
+              NEXT="$MANIFEST" # manifest ahead of tags -> honour a manual minor/major bump
+            else
+              NEXT="$PATCH"
+            fi
+          fi
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Next version: $NEXT (latest tag: ${LATEST:-none}, manifest: $MANIFEST)"
+      - name: Skip if this version is already released
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,12 +106,28 @@ jobs:
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Stamp the version into the manifest
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("custom_components/daily_schedule/manifest.json")
+          data = json.loads(p.read_text())
+          data["version"] = "${{ steps.ver.outputs.version }}"
+          p.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+      - name: Build card bundle
+        if: steps.check.outputs.exists == 'false'
+        working-directory: card
+        run: |
+          npm ci
+          npm run build
       - name: Package the complete built artifact
         if: steps.check.outputs.exists == 'false'
         run: |
           mkdir -p artifacts
           cp custom_components/daily_schedule/frontend/daily-schedule-card.js artifacts/
-          (cd custom_components && zip -r ../artifacts/daily_schedule.zip daily_schedule)
+          (cd custom_components && zip -r ../artifacts/daily_schedule.zip daily_schedule -x '*/__pycache__/*')
       - name: Create release and upload artifacts
         if: steps.check.outputs.exists == 'false'
         env:
@@ -110,3 +138,19 @@ jobs:
             artifacts/daily-schedule-card.js \
             --title "v${{ steps.ver.outputs.version }}" \
             --generate-notes
+      # Keep the repo manifest in step with the release. Best-effort: if a branch
+      # protection rule blocks the push, the release is still cut (the next run
+      # derives from the tag regardless). [skip ci] avoids re-triggering CI.
+      - name: Commit the stamped version back to the default branch
+        if: steps.check.outputs.exists == 'false'
+        continue-on-error: true
+        run: |
+          if git diff --quiet -- custom_components/daily_schedule/manifest.json; then
+            echo "manifest already current; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add custom_components/daily_schedule/manifest.json
+          git commit -m "chore(release): v${{ steps.ver.outputs.version }} [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

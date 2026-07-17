@@ -171,6 +171,20 @@ npx playwright test        # headless smoke tests of the rendered card
 `npm run build` emits the card bundle directly into the integration, which
 serves and auto-registers it as a frontend resource.
 
+> **The built bundle is _not_ committed** — it is a generated artifact
+> (`.gitignore`d) built by CI and shipped in the release zip (HACS installs it
+> via `zip_release`). Run `npm run build` before the Playwright smoke tests or a
+> manual/dev install. The integration warns and skips the card if the bundle is
+> absent, so the Python side still loads.
+
+### Releases & versioning
+
+Releases are automated. On merge to `main`, CI derives the next version from the
+latest git tag, **patch-bumps** it, builds the card, publishes a GitHub release
+(with `daily_schedule.zip`), and commits the stamped `manifest.json` version
+back. **Do not bump `manifest.json` in a feature PR** — to request a minor/major
+bump, set `version` ahead of the latest tag in that one PR and CI will honour it.
+
 ## License
 
 [MIT](LICENSE)
