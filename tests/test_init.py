@@ -39,13 +39,35 @@ async def test_switch_toggles_schedule_enabled(hass, config_entry):
     assert manager.schedule.enabled is True
 
 
-async def test_card_bundle_is_registered(hass, config_entry):
-    from custom_components.daily_schedule.frontend import CARD_PATH, _REGISTERED
+async def test_card_registered_when_bundle_present(
+    hass, config_entry, tmp_path, monkeypatch
+):
+    # The card bundle is a build artifact (built by `npm run build`, shipped in
+    # the release zip) and is not committed, so tests can't assume it exists on
+    # disk. When it *is* present, setup registers it as a static frontend
+    # resource.
+    from custom_components.daily_schedule import frontend
 
-    assert CARD_PATH.is_file(), "built card bundle must ship inside the integration"
+    fake_bundle = tmp_path / "daily-schedule-card.js"
+    fake_bundle.write_text("/* built card */")
+    monkeypatch.setattr(frontend, "CARD_PATH", fake_bundle)
+
     await _setup_empty(hass, config_entry)
-    # The static path for the card is registered during async_setup.
-    assert hass.data.get(_REGISTERED) is True
+    assert hass.data.get(frontend._REGISTERED) is True
+
+
+async def test_setup_succeeds_without_card_bundle(
+    hass, config_entry, tmp_path, monkeypatch
+):
+    # A source checkout that hasn't run `npm run build` has no bundle. The
+    # integration must still set up cleanly — it just skips the card (and logs a
+    # warning) rather than failing.
+    from custom_components.daily_schedule import frontend
+
+    monkeypatch.setattr(frontend, "CARD_PATH", tmp_path / "missing.js")
+
+    await _setup_empty(hass, config_entry)
+    assert hass.data.get(frontend._REGISTERED) is None
 
 
 async def test_unload_removes_entry(hass, config_entry):
