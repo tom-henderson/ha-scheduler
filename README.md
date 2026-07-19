@@ -58,10 +58,17 @@ edited in the segment popover and stored on the segment. A type declares these
 via `param_schema` in the registry; the engine merges a segment's saved values
 over the step's defaults when it fires the service call.
 
-For `climate`, the **HVAC mode and fan mode lists are read from the target
-entity's own `hvac_modes` / `fan_modes` attributes** — nothing is assumed. When
-a bar targets several climate entities, only the modes they *all* support are
-offered. Segments are coloured by mode.
+For `climate`, the **HVAC mode, fan mode and swing lists are read from the
+target entity's own `hvac_modes` / `fan_modes` / `swing_modes` attributes** —
+nothing is assumed. When a bar targets several climate entities, only the modes
+they *all* support are offered. Segments are coloured by mode.
+
+Every setting the entity supports is set on each change (mode + temperature
+together, then fan, then swing). This matters for **IR-based integrations such
+as [SmartIR](https://github.com/smartHomeHub/SmartIR)**, where one service call
+re-transmits the entire config as a single encoded signal — leaving a setting
+unspecified would bake a stale value into the IR — so the editor seeds every
+supported setting from the entity and applies them all.
 
 `media` (and `climate`) show that a state can run a **sequence** of service
 calls — for media, set the volume then play; for climate, set the mode,

@@ -23,6 +23,7 @@ from .const import (
     HOURS_PER_DAY,
     apply_params,
     is_stateless,
+    prune_empty,
     step_should_fire,
     steps_for,
 )
@@ -258,6 +259,7 @@ class ScheduleEngine:
             data = apply_params(step.data, seg_data or {})
             if not step_should_fire(step, data):
                 continue
+            data = prune_empty(data)  # don't send blank optional fields
             try:
                 await self.hass.services.async_call(
                     step.domain,
