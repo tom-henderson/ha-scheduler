@@ -127,7 +127,11 @@ jobs:
         run: |
           mkdir -p artifacts
           cp custom_components/daily_schedule/frontend/daily-schedule-card.js artifacts/
-          (cd custom_components && zip -r ../artifacts/daily_schedule.zip daily_schedule -x '*/__pycache__/*')
+          # HACS `zip_release` extracts the archive *into* custom_components/daily_schedule,
+          # so the zip must hold the integration's files (manifest.json, the built card under
+          # frontend/, …) at its root. Zipping the daily_schedule/ folder itself would
+          # double-nest to custom_components/daily_schedule/daily_schedule on install.
+          (cd custom_components/daily_schedule && zip -r ../../artifacts/daily_schedule.zip . -x '*/__pycache__/*')
       - name: Create release and upload artifacts
         if: steps.check.outputs.exists == 'false'
         env:
