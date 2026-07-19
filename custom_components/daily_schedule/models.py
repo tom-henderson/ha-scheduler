@@ -53,6 +53,32 @@ def normalize_expr(raw: Any) -> dict[str, Any] | None:
     return {"event": event, "offset": snap_offset(raw.get("offset", 0.0))}
 
 
+# Weekdays follow Python's date.weekday(): Monday=0 … Sunday=6, which is also
+# what dt_util.now().weekday() returns in the engine.
+ALL_DAYS: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6)
+
+
+def normalize_days(raw: Any) -> list[int]:
+    """Coerce a weekday mask into a sorted, de-duplicated list of ints 0-6.
+
+    A missing mask (``None``) means "every day" — this is what migrates existing
+    single-plan bars, which have no ``days`` key. An explicit empty list is kept
+    empty (a bar active on no day, i.e. effectively off); the card keeps at least
+    one day selected so this only arises from hand-edited configs.
+    """
+    if raw is None:
+        return list(ALL_DAYS)
+    days: set[int] = set()
+    for d in raw:
+        try:
+            i = int(d)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i <= 6:
+            days.add(i)
+    return sorted(days)
+
+
 @dataclass
 class Segment:
     """A timed override painted on top of a bar's base state."""
@@ -147,6 +173,9 @@ class Bar:
     targets: list[str] = field(default_factory=list)
     base: int = OFF_STATE
     enabled: bool = True
+    # Weekdays this bar acts on (Monday=0 … Sunday=6). Defaults to every day, so
+    # a bar with no `days` behaves exactly as before (§10 day-types / issue #5).
+    days: list[int] = field(default_factory=lambda: list(ALL_DAYS))
     segments: list[Segment] = field(default_factory=list)
     triggers: list[Trigger] = field(default_factory=list)
     id: str = field(default_factory=lambda: _uid("bar"))
@@ -167,6 +196,7 @@ class Bar:
             targets=[str(t) for t in data.get("targets", [])],
             base=clamp_state_index(bar_type, int(data.get("base", OFF_STATE))),
             enabled=bool(data.get("enabled", True)),
+            days=normalize_days(data.get("days")),
             segments=segments,
             triggers=triggers,
         )
@@ -179,9 +209,14 @@ class Bar:
             "targets": list(self.targets),
             "base": self.base,
             "enabled": self.enabled,
+            "days": list(self.days),
             "segments": [s.to_dict() for s in self.sorted_segments()],
             "triggers": [t.to_dict() for t in self.sorted_triggers()],
         }
+
+    def active_on(self, weekday: int) -> bool:
+        """Whether this bar acts on the given weekday (Monday=0 … Sunday=6)."""
+        return weekday in self.days
 
     def sorted_segments(self) -> list[Segment]:
         return sorted(self.segments, key=lambda s: s.start)

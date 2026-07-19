@@ -118,9 +118,13 @@ def jittered_trigger_at(trigger: Trigger, rng: random.Random) -> float:
 def detect_conflicts(schedule: Schedule) -> dict[str, list[str]]:
     """Map each bar id -> names of enabled bars it conflicts with.
 
-    Two enabled bars conflict when they share a target entity and their *active*
-    segments overlap in time. Uses the un-jittered segments so the warning is
-    stable and deterministic. Passive only — the engine never resolves these.
+    Two enabled bars conflict when they share a target entity, run on at least
+    one common weekday, and their *active* segments overlap in time. Uses the
+    un-jittered segments so the warning is stable and deterministic. Passive
+    only — the engine never resolves these.
+
+    Bars whose day masks never intersect (e.g. a weekday bar and a weekend bar)
+    can never be active at once, so they are not a conflict (issue #5).
 
     Stateless (trigger) bars hold no state and are excluded — two triggers may
     share a moment harmlessly.
@@ -134,6 +138,8 @@ def detect_conflicts(schedule: Schedule) -> dict[str, list[str]]:
         for k in range(i + 1, len(bars)):
             a, b = bars[i], bars[k]
             if not set(a.targets) & set(b.targets):
+                continue
+            if not set(a.days) & set(b.days):
                 continue
             if _active_overlap(a, b):
                 result[a.id].append(b.name)

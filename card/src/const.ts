@@ -28,6 +28,25 @@ export const MAX_SOLAR_OFFSET = 2;
 /** Semantic colour for solar markers/edges. */
 export const SUN_COLOR = "#f5b301";
 
+/**
+ * Weekdays, Monday-first, matching Python's `date.weekday()` (Monday=0 …
+ * Sunday=6) used by the engine's day mask. `letter` labels the per-bar chips;
+ * `short` is used in the header summary badge.
+ */
+export const WEEKDAYS: { i: number; letter: string; short: string }[] = [
+  { i: 0, letter: "M", short: "Mon" },
+  { i: 1, letter: "T", short: "Tue" },
+  { i: 2, letter: "W", short: "Wed" },
+  { i: 3, letter: "T", short: "Thu" },
+  { i: 4, letter: "F", short: "Fri" },
+  { i: 5, letter: "S", short: "Sat" },
+  { i: 6, letter: "S", short: "Sun" },
+];
+
+export const ALL_DAYS: number[] = [0, 1, 2, 3, 4, 5, 6];
+export const WEEKDAY_DAYS: number[] = [0, 1, 2, 3, 4];
+export const WEEKEND_DAYS: number[] = [5, 6];
+
 /** Jitter presets, in hours, matching the mockup. */
 export const JITTERS: { v: number; label: string }[] = [
   { v: 0, label: "None" },

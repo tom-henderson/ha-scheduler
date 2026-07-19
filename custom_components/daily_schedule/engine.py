@@ -93,12 +93,15 @@ class ScheduleEngine:
 
         Sun-relative boundaries are resolved to concrete times for *today* first
         (issue #3), so the rest of the pipeline — jitter, neighbour-clamping,
-        change-points — is unchanged and clock-based.
+        change-points — is unchanged and clock-based. Bars whose day mask
+        excludes today are left out of the plan entirely (issue #5).
         """
         self._plans = {}
-        today = dt_util.now().date()
+        now = dt_util.now()
+        today = now.date()
+        weekday = now.weekday()
         for bar in self._schedule.bars:
-            if not bar.enabled or is_stateless(bar.type):
+            if not bar.enabled or is_stateless(bar.type) or not bar.active_on(weekday):
                 continue
             resolved = self._resolve_bar(bar, today)
             intervals = jittered_segments(resolved, self._rng)
@@ -174,9 +177,14 @@ class ScheduleEngine:
         once per rebuild.
         """
         now = dt_util.now()
+        weekday = now.weekday()
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         for bar in self._schedule.bars:
-            if not bar.enabled or not is_stateless(bar.type):
+            if (
+                not bar.enabled
+                or not is_stateless(bar.type)
+                or not bar.active_on(weekday)
+            ):
                 continue
             for trigger in bar.sorted_triggers():
                 if not trigger.action:
@@ -221,10 +229,16 @@ class ScheduleEngine:
         """Set every live bar's targets to the state effective right now (§4.2/4.3)."""
         if not self._schedule.enabled:
             return
+        weekday = dt_util.now().weekday()
         now_hour = _now_hour()
         for bar in self._schedule.bars:
             # Stateless bars fire momentary triggers; there is no state to sync.
-            if not bar.enabled or is_stateless(bar.type):
+            # A bar excluded on today's weekday makes no calls (issue #5).
+            if (
+                not bar.enabled
+                or is_stateless(bar.type)
+                or not bar.active_on(weekday)
+            ):
                 continue
             plan = self._plans.get(bar.id)
             if not plan:

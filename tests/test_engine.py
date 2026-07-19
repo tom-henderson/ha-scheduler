@@ -323,6 +323,61 @@ async def test_non_inverted_solar_segment_active(hass, config_entry, light_calls
     assert on, "expected on: 08:00 is within 07:00-sunrise(09:00)"
 
 
+async def test_bar_excluded_on_todays_weekday_makes_no_calls(
+    hass, config_entry, light_calls
+):
+    on, off = light_calls
+    # 2024-06-01 is a Saturday (weekday 5). A weekday-only bar (Mon-Fri) must
+    # make no service calls today (issue #5).
+    with freeze_time("2024-06-01 07:00:00"):
+        await _setup(
+            hass,
+            config_entry,
+            {
+                "enabled": True,
+                "bars": [
+                    {
+                        "id": "bar1",
+                        "name": "Weekday lights",
+                        "type": "light",
+                        "base": 0,
+                        "days": [0, 1, 2, 3, 4],
+                        "targets": ["light.porch"],
+                        "segments": [{"start": 6, "end": 9, "state": 1}],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+    assert not on and not off, "a bar excluded on today's weekday must not act"
+
+
+async def test_bar_included_on_todays_weekday_syncs(hass, config_entry, light_calls):
+    on, off = light_calls
+    # Same Saturday, but a weekend bar (Sat/Sun) is active and should sync on.
+    with freeze_time("2024-06-01 07:00:00"):
+        await _setup(
+            hass,
+            config_entry,
+            {
+                "enabled": True,
+                "bars": [
+                    {
+                        "id": "bar1",
+                        "name": "Weekend lights",
+                        "type": "light",
+                        "base": 0,
+                        "days": [5, 6],
+                        "targets": ["light.porch"],
+                        "segments": [{"start": 6, "end": 9, "state": 1}],
+                    }
+                ],
+            },
+        )
+        await hass.async_block_till_done()
+    assert on, "a bar active on today's weekday should sync its current state"
+
+
 async def test_sync_now_service(hass, config_entry, light_calls):
     on, off = light_calls
     with freeze_time("2024-06-01 07:00:00"):

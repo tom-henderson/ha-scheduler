@@ -1,10 +1,14 @@
 import {
+  ALL_DAYS,
   HOURS,
   HVAC_MODE_COLORS,
   JITTERS,
   MIN_SEGMENT,
   SNAP,
   SUN_EVENTS,
+  WEEKDAYS,
+  WEEKDAY_DAYS,
+  WEEKEND_DAYS,
   typeColor,
 } from "./const";
 import type {
@@ -209,6 +213,31 @@ export function boundaryLabel(seg: Segment, which: "start" | "end"): string {
   if (!expr) return fmt(which === "start" ? seg.start : seg.end);
   const def = sunEventDef(expr.event);
   return `${def?.label ?? expr.event}${expr.offset ? ` ${offsetLabel(expr.offset)}` : ""}`;
+}
+
+// -- day-of-week mask (issue #5) --------------------------------------------
+
+/** A bar's active-days mask, normalized (sorted, deduped); absent = every day. */
+export function barDays(bar: Pick<Bar, "days">): number[] {
+  if (!bar.days) return [...ALL_DAYS];
+  const set = new Set(bar.days.filter((d) => d >= 0 && d <= 6));
+  return [...set].sort((a, b) => a - b);
+}
+
+function sameSet(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/**
+ * A compact label for a bar's active days for the header badge: empty when the
+ * bar runs every day (no badge), else "Weekdays" / "Weekend" / "Mon Wed Fri".
+ */
+export function daysLabel(days?: number[]): string {
+  const d = barDays({ days });
+  if (d.length === 7) return "";
+  if (sameSet(d, WEEKDAY_DAYS)) return "Weekdays";
+  if (sameSet(d, WEEKEND_DAYS)) return "Weekend";
+  return d.map((i) => WEEKDAYS[i].short).join(" ");
 }
 
 export function sortedSegments(bar: Bar): Segment[] {

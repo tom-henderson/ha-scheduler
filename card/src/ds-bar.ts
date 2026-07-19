@@ -6,6 +6,7 @@ import {
   boundaryLabel,
   boundsFor,
   coveringSegment,
+  daysLabel,
   fmt,
   isActive,
   isStateless,
@@ -103,8 +104,18 @@ export class DsBar extends LitElement {
     this._editing = null;
   };
 
-  private _saveSettings = (e: CustomEvent<{ name: string; targets: string[] }>): void => {
-    this._emit({ ...this.bar, name: e.detail.name, targets: e.detail.targets }, true);
+  private _saveSettings = (
+    e: CustomEvent<{ name: string; targets: string[]; days: number[] }>
+  ): void => {
+    this._emit(
+      {
+        ...this.bar,
+        name: e.detail.name,
+        targets: e.detail.targets,
+        days: e.detail.days,
+      },
+      true
+    );
     this._editing = null;
   };
 
@@ -236,6 +247,7 @@ export class DsBar extends LitElement {
     const segs = sortedSegments(this.bar);
     const editingSeg = segs.find((s) => s.id === this._editing);
     const editingTrg = this._triggers.find((tr) => tr.id === this._editing);
+    const days = daysLabel(this.bar.days);
 
     return html`
       <div
@@ -255,6 +267,15 @@ export class DsBar extends LitElement {
           <div class="meta">
             <div class="name">
               ${this.bar.name}
+              ${days
+                ? html`<span
+                    class="chip days-chip"
+                    title=${`Active ${days} only`}
+                  >
+                    <ha-icon icon="mdi:calendar-week" style="--mdc-icon-size:12px"></ha-icon>
+                    ${days}
+                  </span>`
+                : nothing}
               ${this.conflicts.length
                 ? html`<span
                     class="chip"
@@ -568,6 +589,10 @@ function barStyles() {
       align-items: center;
       gap: 6px;
       color: var(--ds-text);
+    }
+    .days-chip {
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
     }
     .targets {
       font-size: 11.5px;
