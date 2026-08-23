@@ -31,8 +31,16 @@ export class DsBarSettings extends LitElement {
       .block {
         margin-bottom: 12px;
       }
-      ha-textfield {
+      input.name-input {
         width: 100%;
+        box-sizing: border-box;
+        padding: 7px 9px;
+        border-radius: 8px;
+        border: 1px solid var(--ds-line);
+        background: var(--ds-track-bg);
+        color: var(--ds-text);
+        font-size: 13px;
+        font-family: inherit;
       }
       .days {
         display: flex;
@@ -120,10 +128,11 @@ export class DsBarSettings extends LitElement {
 
         <div class="block">
           <div class="field-label">Name</div>
-          <ha-textfield
+          <input
+            class="name-input"
             .value=${this._name}
             @input=${(e: Event) => (this._name = (e.target as HTMLInputElement).value)}
-          ></ha-textfield>
+          />
         </div>
 
         ${domains.length
