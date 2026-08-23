@@ -82,9 +82,15 @@ export class DsBarSettings extends LitElement {
   @state() private _name = "";
   @state() private _targets: string[] = [];
   @state() private _days: number[] = [...ALL_DAYS];
+  // The bar id these fields were seeded from. A live schedule broadcast
+  // reassigns the `bar` property (a fresh object every push), so re-seeding on
+  // any `bar` change would clobber a half-typed name mid-edit. Seed only when a
+  // *different* bar is being edited, not on every refresh of the same one.
+  private _seededFor: string | null = null;
 
   override willUpdate(changed: Map<string, unknown>): void {
-    if (changed.has("bar")) {
+    if (changed.has("bar") && this.bar.id !== this._seededFor) {
+      this._seededFor = this.bar.id;
       this._name = this.bar.name;
       this._targets = [...this.bar.targets];
       this._days = barDays(this.bar);
