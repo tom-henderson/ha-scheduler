@@ -245,8 +245,14 @@ export class DsSegmentEditor extends LitElement {
   @state() private _err = "";
   @state() private _data: Record<string, unknown> = {};
 
+  // The segment id these fields were seeded from. A live schedule broadcast
+  // reassigns `segment` (a fresh object per push), so re-seeding on any change
+  // would discard in-progress edits; seed only when a different segment opens.
+  private _seededFor: string | null = null;
+
   override willUpdate(changed: Map<string, unknown>): void {
-    if (changed.has("segment")) {
+    if (changed.has("segment") && this.segment.id !== this._seededFor) {
+      this._seededFor = this.segment.id;
       this._si = this.segment.state;
       this._startClock = fmt(this.segment.start);
       this._endClock = fmt(this.segment.end);

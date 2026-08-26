@@ -73,8 +73,14 @@ export class DsTriggerEditor extends LitElement {
   @state() private _jit = 0;
   @state() private _err = "";
 
+  // The trigger id these fields were seeded from. A live schedule broadcast
+  // reassigns `trigger` (a fresh object per push), so re-seeding on any change
+  // would discard in-progress edits; seed only when a different trigger opens.
+  private _seededFor: string | null = null;
+
   override willUpdate(changed: Map<string, unknown>): void {
-    if (changed.has("trigger")) {
+    if (changed.has("trigger") && this.trigger.id !== this._seededFor) {
+      this._seededFor = this.trigger.id;
       const service = this.trigger.action?.service;
       const match = this.actions.find((a) => a.service === service);
       this._actionKey = match?.key ?? this.actions[0]?.key ?? "";

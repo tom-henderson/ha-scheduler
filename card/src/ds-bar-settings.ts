@@ -31,8 +31,16 @@ export class DsBarSettings extends LitElement {
       .block {
         margin-bottom: 12px;
       }
-      ha-textfield {
+      input.name-input {
         width: 100%;
+        box-sizing: border-box;
+        padding: 7px 9px;
+        border-radius: 8px;
+        border: 1px solid var(--ds-line);
+        background: var(--ds-track-bg);
+        color: var(--ds-text);
+        font-size: 13px;
+        font-family: inherit;
       }
       .days {
         display: flex;
@@ -82,9 +90,15 @@ export class DsBarSettings extends LitElement {
   @state() private _name = "";
   @state() private _targets: string[] = [];
   @state() private _days: number[] = [...ALL_DAYS];
+  // The bar id these fields were seeded from. A live schedule broadcast
+  // reassigns the `bar` property (a fresh object every push), so re-seeding on
+  // any `bar` change would clobber a half-typed name mid-edit. Seed only when a
+  // *different* bar is being edited, not on every refresh of the same one.
+  private _seededFor: string | null = null;
 
   override willUpdate(changed: Map<string, unknown>): void {
-    if (changed.has("bar")) {
+    if (changed.has("bar") && this.bar.id !== this._seededFor) {
+      this._seededFor = this.bar.id;
       this._name = this.bar.name;
       this._targets = [...this.bar.targets];
       this._days = barDays(this.bar);
@@ -114,10 +128,11 @@ export class DsBarSettings extends LitElement {
 
         <div class="block">
           <div class="field-label">Name</div>
-          <ha-textfield
+          <input
+            class="name-input"
             .value=${this._name}
             @input=${(e: Event) => (this._name = (e.target as HTMLInputElement).value)}
-          ></ha-textfield>
+          />
         </div>
 
         ${domains.length
