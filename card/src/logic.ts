@@ -29,6 +29,32 @@ export function fmt(h: number): string {
   return `${hh}:${mm}`;
 }
 
+/**
+ * Wall-clock time of `date` as hours past midnight (0–24) in the given IANA
+ * time zone — the *home's* zone, so schedule controls read from the home's
+ * perspective rather than the viewer's. Falls back to the viewer's local time
+ * when the zone is absent, unknown, or invalid.
+ */
+export function hoursInZone(date: Date, timeZone?: string): number {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).formatToParts(date);
+      const get = (t: string): number =>
+        Number(parts.find((p) => p.type === t)?.value ?? "0");
+      return get("hour") + get("minute") / 60 + get("second") / 3600;
+    } catch {
+      // Unknown/invalid zone: fall back to the viewer's local time below.
+    }
+  }
+  return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+}
+
 /** Parse HH:MM -> hours, or null if invalid. */
 export function parse(str: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(str.trim());
@@ -189,7 +215,9 @@ export function sunEventHour(hass: HomeAssistant | undefined, event: string): nu
   if (typeof iso !== "string") return null;
   const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
-  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  // `iso` is an absolute instant; read its hour-of-day in the home's zone, not
+  // the viewer's — otherwise a NZ sunset (19:00) shows as 07:00 edited from UK.
+  return hoursInZone(d, hass?.config?.time_zone);
 }
 
 /**

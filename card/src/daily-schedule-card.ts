@@ -6,7 +6,7 @@ import "./ds-segment-editor";
 import "./ds-base-popover";
 import "./ds-editor";
 import { DOMAIN, HOURS, typeColor } from "./const";
-import { fmt } from "./logic";
+import { fmt, hoursInZone } from "./logic";
 import { sharedStyles } from "./styles";
 import type {
   Bar,
@@ -17,10 +17,10 @@ import type {
   TypeRegistry,
 } from "./types";
 
-const nowHours = (): number => {
-  const d = new Date();
-  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-};
+// Current wall-clock time as hours-past-midnight. When a timeZone (the home's
+// IANA zone, e.g. "Europe/Paris") is given the value reflects that zone rather
+// than the viewer's, so the "now" line is correct while away from home.
+const nowHours = (timeZone?: string): number => hoursInZone(new Date(), timeZone);
 
 @customElement("daily-schedule-card")
 export class DailyScheduleCard extends LitElement {
@@ -38,6 +38,7 @@ export class DailyScheduleCard extends LitElement {
 
   private _unsub?: Promise<() => void>;
   private _nowTimer?: number;
+  private _lastTz?: string;
   private _connectedEntry?: string;
   private _connecting = false;
 
@@ -58,9 +59,17 @@ export class DailyScheduleCard extends LitElement {
     }
   }
 
+  private _homeTz(): string | undefined {
+    return this.hass?.config?.time_zone;
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
-    this._nowTimer = window.setInterval(() => (this._now = nowHours()), 30000);
+    this._now = nowHours(this._homeTz());
+    this._nowTimer = window.setInterval(
+      () => (this._now = nowHours(this._homeTz())),
+      30000
+    );
     this._maybeConnect();
   }
 
@@ -71,6 +80,13 @@ export class DailyScheduleCard extends LitElement {
   }
 
   override updated(): void {
+    // Reflect the home timezone as soon as hass arrives (or if it changes)
+    // without waiting for the next timer tick.
+    const tz = this._homeTz();
+    if (tz !== this._lastTz) {
+      this._lastTz = tz;
+      this._now = nowHours(tz);
+    }
     this._maybeConnect();
   }
 
