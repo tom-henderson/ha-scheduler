@@ -6,7 +6,7 @@ import "./ds-segment-editor";
 import "./ds-base-popover";
 import "./ds-editor";
 import { DOMAIN, HOURS, typeColor } from "./const";
-import { fmt } from "./logic";
+import { fmt, hoursInZone } from "./logic";
 import { sharedStyles } from "./styles";
 import type {
   Bar,
@@ -20,26 +20,7 @@ import type {
 // Current wall-clock time as hours-past-midnight. When a timeZone (the home's
 // IANA zone, e.g. "Europe/Paris") is given the value reflects that zone rather
 // than the viewer's, so the "now" line is correct while away from home.
-const nowHours = (timeZone?: string): number => {
-  const d = new Date();
-  if (timeZone) {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone,
-        hourCycle: "h23",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }).formatToParts(d);
-      const get = (t: string): number =>
-        Number(parts.find((p) => p.type === t)?.value ?? "0");
-      return get("hour") + get("minute") / 60 + get("second") / 3600;
-    } catch {
-      // Unknown/invalid zone: fall back to the viewer's local time below.
-    }
-  }
-  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-};
+const nowHours = (timeZone?: string): number => hoursInZone(new Date(), timeZone);
 
 @customElement("daily-schedule-card")
 export class DailyScheduleCard extends LitElement {
