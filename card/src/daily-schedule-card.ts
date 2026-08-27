@@ -17,8 +17,27 @@ import type {
   TypeRegistry,
 } from "./types";
 
-const nowHours = (): number => {
+// Current wall-clock time as hours-past-midnight. When a timeZone (the home's
+// IANA zone, e.g. "Europe/Paris") is given the value reflects that zone rather
+// than the viewer's, so the "now" line is correct while away from home.
+const nowHours = (timeZone?: string): number => {
   const d = new Date();
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hourCycle: "h23",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).formatToParts(d);
+      const get = (t: string): number =>
+        Number(parts.find((p) => p.type === t)?.value ?? "0");
+      return get("hour") + get("minute") / 60 + get("second") / 3600;
+    } catch {
+      // Unknown/invalid zone: fall back to the viewer's local time below.
+    }
+  }
   return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
 };
 
@@ -38,6 +57,7 @@ export class DailyScheduleCard extends LitElement {
 
   private _unsub?: Promise<() => void>;
   private _nowTimer?: number;
+  private _lastTz?: string;
   private _connectedEntry?: string;
   private _connecting = false;
 
@@ -58,9 +78,17 @@ export class DailyScheduleCard extends LitElement {
     }
   }
 
+  private _homeTz(): string | undefined {
+    return this.hass?.config?.time_zone;
+  }
+
   override connectedCallback(): void {
     super.connectedCallback();
-    this._nowTimer = window.setInterval(() => (this._now = nowHours()), 30000);
+    this._now = nowHours(this._homeTz());
+    this._nowTimer = window.setInterval(
+      () => (this._now = nowHours(this._homeTz())),
+      30000
+    );
     this._maybeConnect();
   }
 
@@ -71,6 +99,13 @@ export class DailyScheduleCard extends LitElement {
   }
 
   override updated(): void {
+    // Reflect the home timezone as soon as hass arrives (or if it changes)
+    // without waiting for the next timer tick.
+    const tz = this._homeTz();
+    if (tz !== this._lastTz) {
+      this._lastTz = tz;
+      this._now = nowHours(tz);
+    }
     this._maybeConnect();
   }
 
